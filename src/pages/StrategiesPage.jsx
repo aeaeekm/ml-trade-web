@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus, Zap, AlertCircle, MoreVertical, Edit2, Trash2,
   Users, BarChart2, ChevronDown, ChevronUp,
@@ -89,21 +90,27 @@ function DotMenu({ onEdit, onDelete }) {
 }
 
 /* ─── Strategy Card ─── */
-function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete }) {
+function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete, onNavigate }) {
   const [toggling,    setToggling]    = useState(false)
   const [assignOpen,  setAssignOpen]  = useState(false)
   const [expanded,    setExpanded]    = useState(false)
 
-  const handleToggle = async () => {
+  const handleToggle = async (e) => {
+    e?.stopPropagation()
     setToggling(true)
     try { await onToggle(strategy.id) }
     finally { setToggling(false) }
   }
 
-  const handleDelete = () => {
+  const handleDelete = (e) => {
+    e?.stopPropagation()
     if (window.confirm(`Delete strategy "${strategy.name}"? This cannot be undone.`)) {
       onDelete(strategy.id)
     }
+  }
+
+  const handleCardClick = () => {
+    onNavigate(strategy.id)
   }
 
   const wr   = strategy.last_win_rate   != null ? `${(strategy.last_win_rate * 100).toFixed(1)}%` : '—'
@@ -119,7 +126,8 @@ function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete }) {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 8 }}
         transition={{ duration: 0.2 }}
-        className="bg-bg border border-border rounded-xl shadow-card overflow-hidden flex flex-col"
+        onClick={handleCardClick}
+        className="bg-bg border border-border rounded-xl shadow-card overflow-hidden flex flex-col cursor-pointer hover:border-accent/40 transition-colors"
       >
         <div className="p-5 flex flex-col gap-4 flex-1">
           {/* Header */}
@@ -139,7 +147,9 @@ function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete }) {
                 )}
               </div>
             </div>
-            <DotMenu onEdit={() => onEdit(strategy)} onDelete={handleDelete} />
+            <div onClick={e => e.stopPropagation()}>
+              <DotMenu onEdit={() => onEdit(strategy)} onDelete={handleDelete} />
+            </div>
           </div>
 
           {/* Confidence meter */}
@@ -184,7 +194,10 @@ function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete }) {
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-border flex items-center gap-2">
+        <div
+          className="px-5 py-3 border-t border-border flex items-center gap-2"
+          onClick={e => e.stopPropagation()}
+        >
           <Toggle
             checked={!!strategy.is_active}
             onChange={handleToggle}
@@ -376,6 +389,7 @@ function StrategyFormModal({ open, onClose, strategy, onSaved }) {
 
 /* ─── Page ─── */
 export default function StrategiesPage() {
+  const navigate = useNavigate()
   const [strategies, setStrategies] = useState([])
   const [accounts,   setAccounts]   = useState([])
   const [loading,    setLoading]    = useState(true)
@@ -419,9 +433,10 @@ export default function StrategiesPage() {
     }
   }
 
-  const openCreate = () => { setEditTarget(null); setModalOpen(true) }
-  const openEdit   = (s)  => { setEditTarget(s);  setModalOpen(true) }
-  const closeModal = ()   => { setModalOpen(false); setEditTarget(null) }
+  const openCreate   = ()  => { setEditTarget(null); setModalOpen(true) }
+  const openEdit     = (s) => { setEditTarget(s);  setModalOpen(true) }
+  const closeModal   = ()  => { setModalOpen(false); setEditTarget(null) }
+  const handleNavigate = (id) => navigate(`/strategies/${id}`)
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -496,6 +511,7 @@ export default function StrategiesPage() {
                 onToggle={handleToggle}
                 onEdit={openEdit}
                 onDelete={handleDelete}
+                onNavigate={handleNavigate}
               />
             ))}
           </AnimatePresence>

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { format } from 'date-fns'
 import {
   DollarSign, Zap, Target, TrendingUp, Monitor,
-  Cpu, Radio, AlertTriangle, ArrowUpRight, ArrowDownRight,
+  Cpu, Radio, AlertTriangle, ArrowUpRight, ArrowDownRight, Info,
 } from 'lucide-react'
 import clsx from 'clsx'
 import useAuthStore from '../store/authStore'
@@ -11,23 +11,15 @@ import { tradesApi }     from '../api/trades'
 import { strategiesApi } from '../api/strategies'
 import { mt5AccountsApi} from '../api/mt5accounts'
 import { systemApi }     from '../api/system'
+import { dashboardApi }  from '../api/dashboard'
 import Card              from '../components/ui/Card'
 import Badge             from '../components/ui/Badge'
 import Skeleton          from '../components/ui/Skeleton'
 import StatusDot         from '../components/ui/StatusDot'
+import Select            from '../components/ui/Select'
 import EquityChart       from '../components/charts/EquityChart'
+import TimeRangeSelector, { useTimeRange } from '../components/ui/TimeRangeSelector'
 import { Table, Thead, Tbody, Th, Tr, Td, TableSkeleton, TableEmpty } from '../components/ui/Table'
-
-/* ── Demo equity curve ── */
-const DEMO_EQUITY = Array.from({ length: 30 }, (_, i) => {
-  const base = 10000
-  const date = new Date()
-  date.setDate(date.getDate() - (29 - i))
-  return {
-    date:   date.toISOString().split('T')[0],
-    equity: base + Math.round(Math.sin(i * 0.5) * 800 + i * 120 + Math.random() * 200),
-  }
-})
 
 /* ── Compact KPI card ── */
 function KpiCard({ label, value, icon: Icon, delta, deltaLabel, variant, loading }) {
@@ -106,16 +98,33 @@ function ServerStatusBar({ sysStatus }) {
 export default function DashboardPage() {
   const { user } = useAuthStore()
 
-  const [summary,    setSummary]    = useState(null)
-  const [signals,    setSignals]    = useState([])
-  const [strategies, setStrategies] = useState([])
-  const [accounts,   setAccounts]   = useState([])
-  const [sysStatus,  setSysStatus]  = useState(null)
-  const [equity,     setEquity]     = useState([])
-  const [loading,    setLoading]    = useState(true)
+  const [summary,      setSummary]      = useState(null)
+  const [signals,      setSignals]      = useState([])
+  const [strategies,   setStrategies]   = useState([])
+  const [accounts,     setAccounts]     = useState([])
+  const [sysStatus,    setSysStatus]    = useState(null)
+  const [equity,       setEquity]       = useState([])
+  const [equityLoading,setEquityLoading]= useState(false)
+  const [loading,      setLoading]      = useState(true)
+  const [selectedAcct, setSelectedAcct] = useState('all')
+
+  const { range, setRange, startDate, setStartDate, endDate, setEndDate, toQueryParams } = useTimeRange('1m')
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+
+  /* Fetch equity chart data whenever account or range changes */
+  const fetchEquity = useCallback(async () => {
+    setEquityLoading(true)
+    const params = { account_id: selectedAcct, ...toQueryParams() }
+    const data = await dashboardApi.accountEquity(params)
+    setEquity(Array.isArray(data) ? data : [])
+    setEquityLoading(false)
+  }, [selectedAcct, range, startDate, endDate]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchEquity()
+  }, [fetchEquity])
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -133,12 +142,6 @@ export default function DashboardPage() {
         if (strats.status === 'fulfilled') setStrategies(Array.isArray(strats.value) ? strats.value.slice(0, 5) : [])
         if (accs.status   === 'fulfilled') setAccounts(Array.isArray(accs.value) ? accs.value : [])
         if (sys.status    === 'fulfilled') setSysStatus(sys.value)
-
-        if (sum.status === 'fulfilled' && sum.value?.equity_curve?.length) {
-          setEquity(sum.value.equity_curve)
-        } else {
-          setEquity(DEMO_EQUITY)
-        }
       } catch {}
       finally { setLoading(false) }
     }
@@ -245,21 +248,56 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Equity chart */}
+      {/* Account Equity */}
       <Card
         header={
-          <div className="flex items-center justify-between w-full">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between w-full gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-text">Equity Curve</h3>
-              <p className="text-xs text-muted mt-0.5">Portfolio value over time</p>
+              <h3 className="text-sm font-semibold text-text">Account Equity</h3>
+              <p className="text-xs text-muted mt-0.5">Equity over time per account</p>
             </div>
-            <Badge variant="blue">30d</Badge>
+            <div className="shrink-0 w-full sm:w-48">
+              <Select
+                value={selectedAcct}
+                onChange={e => setSelectedAcct(e.target.value)}
+                options={[
+                  { value: 'all', label: 'All Accounts' },
+                  ...accounts.map(a => ({ value: String(a.id), label: a.name })),
+                ]}
+              />
+            </div>
           </div>
         }
         noPadding
       >
-        <div className="px-5 pt-2 pb-5">
-          <EquityChart data={equity} />
+        <div className="px-5 pt-3 pb-5 space-y-3">
+          <TimeRangeSelector
+            value={range}
+            onChange={setRange}
+            startDate={startDate}
+            endDate={endDate}
+            onStartDate={setStartDate}
+            onEndDate={setEndDate}
+          />
+          {equityLoading ? (
+            <div className="h-56 flex items-center justify-center">
+              <Skeleton height={220} className="w-full rounded-lg" />
+            </div>
+          ) : equity.length === 0 ? (
+            <div className="h-56 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-2 text-center max-w-xs">
+                <div className="h-9 w-9 rounded-lg bg-accent/10 flex items-center justify-center">
+                  <Info size={18} className="text-accent" />
+                </div>
+                <p className="text-sm font-medium text-text">No equity data yet</p>
+                <p className="text-xs text-muted">
+                  EA needs to send a heartbeat first. Connect your MT5 EA to start seeing equity data.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <EquityChart data={equity} />
+          )}
         </div>
       </Card>
 

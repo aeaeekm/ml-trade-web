@@ -1,12 +1,111 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Edit2, Trash2, Server, Clock, Layers, Wifi, WifiOff, AlertTriangle } from 'lucide-react'
+import { Edit2, Trash2, Server, Clock, Layers, Wifi, WifiOff, AlertTriangle, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
 import clsx from 'clsx'
 import Card from '../ui/Card'
 import Badge from '../ui/Badge'
 import Toggle from '../ui/Toggle'
 import Button from '../ui/Button'
 import { resolveEAStatus, lastSeenText } from '../../api/eaStatus'
+
+/* ── Derive status with priority: BLOCKED > RUNNING > STOPPED > OFFLINE > UNKNOWN ── */
+function deriveStatus(ea) {
+  if (!ea) return 'UNKNOWN'
+  if (ea.last_error === 4014) return 'BLOCKED'
+  if (ea.status === 'RUNNING') return 'RUNNING'
+  if (ea.status === 'STOPPED') return 'STOPPED'
+  if (ea.status === 'OFFLINE') return 'OFFLINE'
+  return 'UNKNOWN'
+}
+
+const DERIVED_BADGE = {
+  RUNNING: 'success',
+  BLOCKED: 'warning',
+  STOPPED: 'neutral',
+  OFFLINE: 'danger',
+  UNKNOWN: 'neutral',
+}
+
+const BACKEND_URL = 'http://127.0.0.1:8000'
+
+/* ── Error 4014 troubleshooting panel ── */
+function WebRequestPanel({ defaultOpen = true }) {
+  const [open,    setOpen]    = useState(defaultOpen)
+  const [copied,  setCopied]  = useState(false)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(BACKEND_URL).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  return (
+    <div className="rounded-xl border border-warning/30 bg-warning/10 overflow-hidden">
+      {/* Header / toggle */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-left"
+      >
+        <div className="flex items-center gap-2 text-warning text-xs font-semibold">
+          <AlertTriangle size={13} className="shrink-0" />
+          WebRequest Blocked by MT5
+        </div>
+        {open
+          ? <ChevronUp size={13} className="text-warning shrink-0" />
+          : <ChevronDown size={13} className="text-warning shrink-0" />}
+      </button>
+
+      {/* Body */}
+      {open && (
+        <div className="px-4 pb-4 space-y-3 text-xs">
+          <p className="text-muted">
+            EA is running but MT5 is blocking WebRequest to the backend.
+          </p>
+
+          <div>
+            <p className="font-semibold text-text mb-1.5">Fix Steps:</p>
+            <ol className="space-y-1 text-muted list-none">
+              {[
+                'Open MT5',
+                'Tools → Options → Expert Advisors',
+                <span key="cb">Check <span className="text-success font-semibold">Allow WebRequest for listed URL</span></span>,
+                'Click "+" → Type URL below → press Tab',
+                'Click OK → Reload chart',
+              ].map((step, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="shrink-0 h-4 w-4 rounded-full bg-warning/20 text-warning font-bold flex items-center justify-center leading-none" style={{ fontSize: 9 }}>{i + 1}</span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {/* URL copy row */}
+          <div>
+            <p className="font-semibold text-text mb-1">Add this URL:</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-bg border border-border rounded-lg px-2.5 py-1.5 font-mono text-text text-[11px] truncate">
+                {BACKEND_URL}
+              </code>
+              <button
+                onClick={handleCopy}
+                title="Copy URL"
+                className="shrink-0 h-7 w-7 rounded-lg bg-bg border border-border flex items-center justify-center text-muted hover:text-text hover:border-muted transition-colors"
+              >
+                {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+              </button>
+            </div>
+          </div>
+
+          <p className="text-warning/80 font-medium">
+            IMPORTANT: Use 127.0.0.1, NOT localhost (MT5 rejects "localhost" in some versions)
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function MiniStat({ label, value, className }) {
   return (
@@ -39,7 +138,10 @@ export default function MT5AccountCard({ account, onEdit, onDelete, onToggle }) 
   // Real EA heartbeat data (may be null if EA never connected)
   const ea = account._ea || null
 
-  // Resolve status from heartbeat
+  // Priority-based derived status (BLOCKED > RUNNING > STOPPED > OFFLINE > UNKNOWN)
+  const derivedStatus = deriveStatus(ea)
+
+  // Also keep existing resolveEAStatus for label/warn (used in badge below)
   const { label: eaLabel, color: eaColor, warn } = resolveEAStatus(
     ea
       ? { status: ea.status, seconds_since_heartbeat: ea.seconds_since_heartbeat,
@@ -47,6 +149,9 @@ export default function MT5AccountCard({ account, onEdit, onDelete, onToggle }) 
           terminal_connected: ea.terminal_connected }
       : { status: 'UNKNOWN' }
   )
+
+  // Override badge color for BLOCKED state
+  const effectiveBadgeColor = derivedStatus === 'BLOCKED' ? 'warning' : eaColor
 
   const cur         = ea?.account_currency || account.currency_type || 'USD'
   const balance     = ea?.balance
@@ -107,19 +212,19 @@ export default function MT5AccountCard({ account, onEdit, onDelete, onToggle }) 
         <div className="flex items-center gap-2 flex-wrap">
           <span className={clsx(
             'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border',
-            EA_COLOR[eaColor] || EA_COLOR.neutral
+            EA_COLOR[effectiveBadgeColor] || EA_COLOR.neutral
           )}>
             <span className={clsx(
               'h-1.5 w-1.5 rounded-full shrink-0',
-              eaColor === 'success' && 'bg-success animate-pulse',
-              eaColor === 'warning' && 'bg-warning',
-              eaColor === 'danger'  && 'bg-danger',
-              eaColor === 'neutral' && 'bg-muted',
+              effectiveBadgeColor === 'success' && 'bg-success animate-pulse',
+              effectiveBadgeColor === 'warning' && 'bg-warning',
+              effectiveBadgeColor === 'danger'  && 'bg-danger',
+              effectiveBadgeColor === 'neutral' && 'bg-muted',
             )} />
-            EA {eaLabel}
+            {derivedStatus === 'BLOCKED' ? 'EA BLOCKED' : `EA ${eaLabel}`}
           </span>
           {eaVersion && <span className="text-xs text-muted">{eaVersion}</span>}
-          {warn && <AlertTriangle size={13} className="text-warning" />}
+          {warn && derivedStatus !== 'BLOCKED' && <AlertTriangle size={13} className="text-warning" />}
         </div>
 
         {/* ── Status Grid ── */}
@@ -170,6 +275,9 @@ export default function MT5AccountCard({ account, onEdit, onDelete, onToggle }) 
             </div>
           )}
         </div>
+
+        {/* ── Error 4014: WebRequest blocked panel ── */}
+        {lastError === 4014 && <WebRequestPanel defaultOpen />}
 
         {/* ── EA details (bot name / strategy) ── */}
         {(ea?.bot_name || ea?.strategy_id) && (
