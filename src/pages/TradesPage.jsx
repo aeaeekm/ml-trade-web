@@ -456,7 +456,7 @@ export default function TradesPage() {
   const [total, setTotal]             = useState(0)
   const [openCount, setOpenCount]     = useState(0)
   const [closedCount, setClosedCount] = useState(0)
-  const [summary, setSummary]         = useState(null)
+  const [stats, setStats]             = useState(null)  // computed from filtered trades
   const [filterOptions, setFilterOptions] = useState({ accounts: [], symbols: [] })
   const [syncStatus, setSyncStatus]   = useState([])
 
@@ -533,21 +533,20 @@ export default function TradesPage() {
     setTotal(result.total ?? 0)
     setOpenCount(result.open_count ?? 0)
     setClosedCount(result.closed_count ?? 0)
+    if (result.stats) setStats(result.stats)   // stats computed from ALL filtered rows
     setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, status, direction, profitType, selectedAccounts, selectedSymbols, startDate, endDate, page])
 
-  // ── Fetch filter options + sync status + summary (once) ──
+  // ── Fetch filter options + sync status (once on mount) ──
   useEffect(() => {
     async function init() {
-      const [opts, syncSt, sum] = await Promise.all([
+      const [opts, syncSt] = await Promise.all([
         tradesApi.filters(),
         tradesApi.syncStatus(),
-        tradesApi.summary(),
       ])
       setFilterOptions(opts)
       setSyncStatus(Array.isArray(syncSt) ? syncSt : [])
-      setSummary(sum)
     }
     init()
   }, [])
@@ -616,7 +615,6 @@ export default function TradesPage() {
       autoRefreshTimer.current = setTimeout(() => {
         fetchTrades(page)
         tradesApi.syncStatus().then(s => setSyncStatus(Array.isArray(s) ? s : []))
-        tradesApi.summary().then(setSummary)
       }, 15000)
     }
   }
@@ -630,13 +628,9 @@ export default function TradesPage() {
     exportCsv(Array.isArray(result.trades) ? result.trades : [])
   }
 
-  // ── Summary stat values ────────────────────
-  const winRate = summary?.win_rate != null
-    ? `${Number(summary.win_rate).toFixed(1)}%`
-    : null
-  const totalPnl = summary?.total_pnl != null
-    ? summary.total_pnl
-    : null
+  // ── Summary stat values — from filtered API response ──────────────────────
+  const winRate  = stats?.win_rate  != null ? `${Number(stats.win_rate).toFixed(1)}%` : null
+  const totalPnl = stats?.total_pnl != null ? stats.total_pnl : null
 
   // ────────────────────────────────────────────
   return (
@@ -667,7 +661,7 @@ export default function TradesPage() {
       </div>
 
       {/* ── Summary stat cards ── */}
-      {(total > 0 || summary?.has_data) && (
+      {(total > 0 || stats?.has_data) && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {[
             { label: 'Total Trades', value: total, key: 'total' },
