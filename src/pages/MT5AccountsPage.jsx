@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Monitor, AlertCircle, RefreshCw, ServerCrash } from 'lucide-react'
 import { mt5AccountsApi } from '../api/mt5accounts'
-import { systemApi } from '../api/system'
+import { eaStatusApi } from '../api/eaStatus'
 import Button from '../components/ui/Button'
 import StatusDot from '../components/ui/StatusDot'
 import MT5AccountCard from '../components/features/MT5AccountCard'
@@ -61,12 +61,24 @@ export default function MT5AccountsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editTarget, setEditTarget] = useState(null)   // null = create mode
 
-  const fetchAccounts = useCallback(async () => {
+  // Fetch accounts + EA heartbeat status, merge them
+  const fetchAll = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await mt5AccountsApi.list()
-      setAccounts(Array.isArray(data) ? data : [])
+      const [accountData, eaData, sysData] = await Promise.all([
+        mt5AccountsApi.list(),
+        eaStatusApi.list(),
+        eaStatusApi.systemStatus(),
+      ])
+      const eaMap = {}
+      ;(eaData || []).forEach(ea => { eaMap[ea.broker_account_id] = ea })
+      const merged = (accountData || []).map(acc => ({
+        ...acc,
+        _ea: eaMap[acc.id] || null,
+      }))
+      setAccounts(merged)
+      setSysStatus(sysData)
     } catch {
       setError('Failed to load MT5 accounts.')
     } finally {
@@ -74,17 +86,11 @@ export default function MT5AccountsPage() {
     }
   }, [])
 
-  const fetchStatus = useCallback(async () => {
-    const s = await systemApi.status()
-    setSysStatus(s)
-  }, [])
-
   useEffect(() => {
-    fetchAccounts()
-    fetchStatus()
-    const id = setInterval(fetchStatus, 30_000)
+    fetchAll()
+    const id = setInterval(fetchAll, 30_000)   // refresh every 30s
     return () => clearInterval(id)
-  }, [fetchAccounts, fetchStatus])
+  }, [fetchAll])
 
   // Modal handlers
   const openCreate = () => { setEditTarget(null); setModalOpen(true) }
@@ -93,18 +99,17 @@ export default function MT5AccountsPage() {
 
   const handleSave = async (formData, id) => {
     if (id) {
-      const updated = await mt5AccountsApi.update(id, formData)
-      setAccounts(prev => prev.map(a => a.id === id ? updated : a))
+      await mt5AccountsApi.update(id, formData)
     } else {
-      const created = await mt5AccountsApi.create(formData)
-      setAccounts(prev => [...prev, created])
+      await mt5AccountsApi.create(formData)
     }
+    fetchAll()
   }
 
   const handleDelete = async (id) => {
     try {
       await mt5AccountsApi.delete(id)
-      setAccounts(prev => prev.filter(a => a.id !== id))
+      fetchAll()
     } catch {
       alert('Failed to delete account.')
     }
@@ -112,17 +117,17 @@ export default function MT5AccountsPage() {
 
   const handleToggle = async (id, enabled) => {
     try {
-      const updated = await mt5AccountsApi.update(id, { enabled })
-      setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...updated } : a))
+      await mt5AccountsApi.update(id, { is_active: enabled })
+      fetchAll()
     } catch {
       alert('Failed to update account.')
     }
   }
 
-  // Derived status values
+  // Derived status values from real data
   const signalStatus = toStatus(sysStatus?.signal_server)
   const apiStatus    = toStatus(sysStatus?.api_server)
-  const activeEas    = sysStatus?.active_eas ?? accounts.filter(a => a.ea_status === 'running').length
+  const activeEas    = sysStatus?.active_eas ?? accounts.filter(a => a._ea?.status === 'RUNNING').length
   const totalEas     = accounts.length
 
   return (

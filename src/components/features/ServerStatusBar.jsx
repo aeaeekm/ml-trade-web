@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Activity } from 'lucide-react'
-import { systemApi } from '../../api/system'
+import { eaStatusApi } from '../../api/eaStatus'
 import StatusDot from '../ui/StatusDot'
 
 function formatHeartbeat(ts) {
@@ -22,7 +22,7 @@ export default function ServerStatusBar() {
   const [status, setStatus] = useState(null)
 
   const fetch = useCallback(() => {
-    systemApi.status().then(setStatus)
+    eaStatusApi.systemStatus().then(setStatus)
   }, [])
 
   useEffect(() => {
