@@ -20,4 +20,9 @@ export const brokersApi = {
     const res = await client.delete(`/mt5-accounts/${id}`)
     return res.data
   },
+
+  regenerateEaKey: async (id) => {
+    const res = await client.post(`/mt5-accounts/${id}/regenerate-key`)
+    return res.data   // returns updated account with new ea_api_key
+  },
 }

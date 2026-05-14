@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Save, Plus, Trash2, CheckCircle, AlertCircle, User, Link2, Key, Sliders } from 'lucide-react'
+import { Save, Plus, Trash2, CheckCircle, AlertCircle, User, Link2, Key, Sliders, Eye, EyeOff, RefreshCw, Copy, Check } from 'lucide-react'
 import { authApi } from '../api/auth'
 import { brokersApi } from '../api/brokers'
 import useAuthStore from '../store/authStore'
@@ -209,25 +209,204 @@ function BrokersTab() {
   )
 }
 
-function ApiKeysTab() {
+// ── Shared key-row component ─────────────────────────────────────────────────
+function KeyRow({ label, description, value, loading, onReveal, revealed, onRegenerate, regenerating }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    if (!value) return
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const maskedKey = value
+    ? value.slice(0, 8) + '••••••••••••••••••••••••' + value.slice(-4)
+    : '••••••••••••••••••••••••••••••••'
+
   return (
-    <div className="max-w-lg">
-      <Card header="API Keys">
-        <div className="space-y-4">
-          <div className="p-4 bg-warning/10 border border-warning/20 rounded-lg">
-            <p className="text-sm text-warning font-medium">Never share your API keys</p>
-            <p className="text-xs text-muted mt-1">Keep your API keys secure. Do not expose them in client-side code.</p>
-          </div>
-          <div className="p-4 bg-surface border border-border rounded-lg flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-text">Secret Key</p>
-              <p className="text-xs font-mono text-muted mt-0.5">sk-••••••••••••••••••••••••••••</p>
-            </div>
-            <Button size="sm" variant="secondary">Reveal</Button>
-          </div>
-          <Button variant="danger" size="sm" icon={<Key size={13} />}>Regenerate Key</Button>
+    <div className="p-4 bg-surface border border-border rounded-xl space-y-3">
+      <div>
+        <p className="text-sm font-semibold text-text">{label}</p>
+        {description && <p className="text-xs text-muted mt-0.5">{description}</p>}
+      </div>
+
+      {/* Key display */}
+      <div className="flex items-center gap-2 p-3 bg-bg border border-border rounded-lg font-mono text-xs text-muted overflow-hidden">
+        <span className="flex-1 truncate select-all">
+          {revealed && value ? value : maskedKey}
+        </span>
+        {/* Copy button — only when revealed */}
+        {revealed && value && (
+          <button
+            onClick={handleCopy}
+            className="shrink-0 p-1 rounded text-muted hover:text-text transition-colors"
+            title="Copy to clipboard"
+          >
+            {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+          </button>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={revealed ? <EyeOff size={13} /> : <Eye size={13} />}
+          onClick={onReveal}
+          loading={loading}
+        >
+          {revealed ? 'Hide' : 'Reveal'}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<RefreshCw size={13} />}
+          loading={regenerating}
+          onClick={onRegenerate}
+          className="text-warning hover:bg-warning/10"
+        >
+          Regenerate
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ApiKeysTab() {
+  const { user, setUser } = useAuthStore()
+
+  // User API key state
+  const [userKeyRevealed,    setUserKeyRevealed]    = useState(false)
+  const [userKeyLoading,     setUserKeyLoading]      = useState(false)
+  const [userKeyRegenerating,setUserKeyRegenerating] = useState(false)
+  const [userKey,            setUserKey]             = useState(user?.api_key || null)
+
+  // MT5 EA keys state
+  const [accounts,      setAccounts]      = useState([])
+  const [acctLoading,   setAcctLoading]   = useState(true)
+  const [revealed,      setRevealed]      = useState({})      // { [id]: bool }
+  const [regenerating,  setRegenerating]  = useState({})      // { [id]: bool }
+
+  useEffect(() => {
+    brokersApi.mt5Accounts()
+      .then(d => setAccounts(Array.isArray(d) ? d : []))
+      .catch(() => {})
+      .finally(() => setAcctLoading(false))
+  }, [])
+
+  // ── User API key handlers ────────────────────────────────────────────────
+  const handleRevealUserKey = async () => {
+    if (userKeyRevealed) { setUserKeyRevealed(false); return }
+    // Key is already in user object from /auth/me — just show it
+    setUserKeyLoading(true)
+    try {
+      const me = await authApi.me(useAuthStore.getState().token)
+      setUserKey(me.api_key)
+      setUser(me)
+      setUserKeyRevealed(true)
+    } catch {
+      alert('Failed to load API key.')
+    } finally {
+      setUserKeyLoading(false)
+    }
+  }
+
+  const handleRegenerateUserKey = async () => {
+    if (!window.confirm('Regenerate your API key? The old key will stop working immediately.')) return
+    setUserKeyRegenerating(true)
+    try {
+      const updated = await authApi.regenerateApiKey()
+      setUserKey(updated.api_key)
+      setUser(updated)
+      setUserKeyRevealed(true)   // auto-reveal after regenerate
+    } catch {
+      alert('Failed to regenerate API key.')
+    } finally {
+      setUserKeyRegenerating(false)
+    }
+  }
+
+  // ── EA key handlers (per MT5 account) ───────────────────────────────────
+  const handleRevealEaKey = (id) => {
+    setRevealed(r => ({ ...r, [id]: !r[id] }))
+  }
+
+  const handleRegenerateEaKey = async (id, name) => {
+    if (!window.confirm(`Regenerate EA key for "${name}"? The EA will disconnect until you paste the new key.`)) return
+    setRegenerating(r => ({ ...r, [id]: true }))
+    try {
+      const updated = await brokersApi.regenerateEaKey(id)
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...updated } : a))
+      setRevealed(r => ({ ...r, [id]: true }))   // auto-reveal new key
+    } catch {
+      alert('Failed to regenerate EA key.')
+    } finally {
+      setRegenerating(r => ({ ...r, [id]: false }))
+    }
+  }
+
+  return (
+    <div className="max-w-lg space-y-6">
+
+      {/* Warning banner */}
+      <div className="flex items-start gap-3 p-4 bg-warning/10 border border-warning/20 rounded-xl">
+        <AlertCircle size={16} className="text-warning shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-warning">Keep your keys secure</p>
+          <p className="text-xs text-muted mt-0.5">Never share API keys or EA keys. Regenerating creates a new key — the old one stops working immediately.</p>
         </div>
-      </Card>
+      </div>
+
+      {/* User API key */}
+      <div>
+        <h3 className="text-sm font-semibold text-text mb-3">User API Key</h3>
+        <KeyRow
+          label="Secret API Key"
+          description="Used for direct API access and integrations."
+          value={userKey}
+          revealed={userKeyRevealed}
+          loading={userKeyLoading}
+          onReveal={handleRevealUserKey}
+          regenerating={userKeyRegenerating}
+          onRegenerate={handleRegenerateUserKey}
+        />
+      </div>
+
+      {/* EA keys per MT5 account */}
+      <div>
+        <h3 className="text-sm font-semibold text-text mb-1">MT5 EA Keys</h3>
+        <p className="text-xs text-muted mb-3">Paste each key into the <span className="font-mono bg-surface px-1 rounded">MT5AccountKey</span> input of the SignalChecker EA for that account.</p>
+
+        {acctLoading ? (
+          <div className="space-y-3">
+            {[1, 2].map(i => <div key={i} className="h-32 bg-surface border border-border rounded-xl animate-skeleton" />)}
+          </div>
+        ) : accounts.length === 0 ? (
+          <div className="p-6 text-center bg-surface border border-border rounded-xl text-sm text-muted">
+            No MT5 accounts found. Add one in the <strong>Brokers</strong> tab or <strong>MT5 Accounts</strong> page.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {accounts.map(acc => (
+              <KeyRow
+                key={acc.id}
+                label={acc.name}
+                description={`${acc.broker ?? ''}  ·  ${acc.mt5_login ?? acc.login ?? ''}  ·  ${acc.account_type === 'real' ? 'Real' : 'Demo'}`}
+                value={acc.ea_api_key}
+                revealed={!!revealed[acc.id]}
+                loading={false}
+                onReveal={() => handleRevealEaKey(acc.id)}
+                regenerating={!!regenerating[acc.id]}
+                onRegenerate={() => handleRegenerateEaKey(acc.id, acc.name)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
     </div>
   )
 }
