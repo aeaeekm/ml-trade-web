@@ -1,11 +1,11 @@
 import client from './client'
 
 export const eaStatusApi = {
-  // All EA statuses for current user's accounts
-  list: () => client.get('/api/mt5/ea-status').then(r => r.data).catch(() => []),
+  // All EA statuses — client baseURL is /api/v1, so path is /mt5/ea-status
+  list: () => client.get('/mt5/ea-status').then(r => r.data).catch(() => []),
 
-  // System-wide status (active EAs, heartbeat time)
-  systemStatus: () => client.get('/api/mt5/system-status').then(r => r.data).catch(() => null),
+  // System-wide status (active EAs, last heartbeat)
+  systemStatus: () => client.get('/mt5/system-status').then(r => r.data).catch(() => null),
 }
 
 // Derive display status + color from EA status string + seconds_since_heartbeat
