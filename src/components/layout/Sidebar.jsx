@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import clsx from 'clsx'
 import {
   LayoutDashboard, Zap, FlaskConical, Brain, ArrowLeftRight,
-  PieChart, Settings, ChevronLeft, ChevronRight, LogOut, Cpu, Menu, X
+  PieChart, Settings, ChevronLeft, ChevronRight, LogOut, Cpu, Menu, X, Monitor
 } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 import Badge from '../ui/Badge'
@@ -20,10 +20,11 @@ const NAV_GROUPS = [
   {
     label: 'Trading',
     items: [
-      { to: '/strategies', icon: Zap,            label: 'Strategies' },
-      { to: '/backtest',   icon: FlaskConical,   label: 'Backtest' },
-      { to: '/models',     icon: Brain,          label: 'ML Models' },
-      { to: '/trades',     icon: ArrowLeftRight, label: 'Trades' },
+      { to: '/strategies',   icon: Zap,            label: 'Strategies'   },
+      { to: '/mt5-accounts', icon: Monitor,         label: 'MT5 Accounts' },
+      { to: '/backtest',     icon: FlaskConical,   label: 'Backtest'     },
+      { to: '/models',       icon: Brain,          label: 'ML Models'    },
+      { to: '/trades',       icon: ArrowLeftRight, label: 'Trades'       },
     ],
   },
   {

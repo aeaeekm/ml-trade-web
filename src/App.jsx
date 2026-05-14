@@ -14,6 +14,7 @@ import ModelsPage from './pages/ModelsPage'
 import TradesPage from './pages/TradesPage'
 import PortfolioPage from './pages/PortfolioPage'
 import SettingsPage from './pages/SettingsPage'
+import MT5AccountsPage from './pages/MT5AccountsPage'
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuthStore()
@@ -69,8 +70,9 @@ export default function App() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard"  element={<DashboardPage />} />
-        <Route path="strategies" element={<StrategiesPage />} />
-        <Route path="backtest"   element={<BacktestPage />} />
+        <Route path="strategies"   element={<StrategiesPage />}    />
+        <Route path="mt5-accounts" element={<MT5AccountsPage />}  />
+        <Route path="backtest"     element={<BacktestPage />}      />
         <Route path="models"     element={<ModelsPage />} />
         <Route path="trades"     element={<TradesPage />} />
         <Route path="portfolio"  element={<PortfolioPage />} />
