@@ -1,0 +1,90 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ── Build output ──────────────────────────────────────────────────────────────
+dist/
+dist-ssr/
+build/
+
+# ── Environment & Secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+*.env
+secrets.*
+config.local.*
+
+# ── API Keys & Credentials ────────────────────────────────────────────────────
+*.key
+*.pem
+*.cert
+*.crt
+*.p12
+*.pfx
+api_keys.*
+credentials.*
+auth.*
+token.*
+
+# ── Local ML Models (trained weights — can be large & private) ────────────────
+*.joblib
+*.pkl
+*.pickle
+*.h5
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+models/
+ml/models/
+
+# ── Databases ─────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+*.sql.gz
+
+# ── Log Files ─────────────────────────────────────────────────────────────────
+logs/
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ── OS & Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+.AppleDouble
+.LSOverride
+Icon
+
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ── Test & Coverage ───────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+*.lcov
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+.cache/
+.temp/
+tmp/
+*.tmp
+*.bak
+*.swp
+*.orig
