@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import clsx from 'clsx'
 import {
   LayoutDashboard, Zap, FlaskConical, Brain, ArrowLeftRight,
-  PieChart, Settings, ChevronLeft, ChevronRight, LogOut, Cpu, Menu, X, Monitor
+  PieChart, Settings, ChevronLeft, ChevronRight, LogOut, Cpu, Menu, X, Monitor,
+  Users, Shield, FileText,
 } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 import Badge from '../ui/Badge'
@@ -30,7 +31,10 @@ const NAV_GROUPS = [
   {
     label: 'Account',
     items: [
-      { to: '/settings', icon: Settings, label: 'Settings' },
+      { to: '/users',            icon: Users,    label: 'User Management', permission: 'users.view'       },
+      { to: '/role-permissions', icon: Shield,   label: 'Role Permissions', permission: 'roles.view'      },
+      { to: '/audit-logs',       icon: FileText, label: 'Audit Logs',       permission: 'audit_logs.view' },
+      { to: '/settings',         icon: Settings, label: 'Settings' },
     ],
   },
 ]
@@ -85,7 +89,7 @@ function NavItem({ to, icon: Icon, label, collapsed }) {
 
 export default function Sidebar({ mobileOpen, onMobileClose }) {
   const [collapsed, setCollapsed] = useState(false)
-  const { user, logout } = useAuthStore()
+  const { user, logout, hasPermission } = useAuthStore()
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -135,9 +139,11 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
               )}
             </AnimatePresence>
             <div className="space-y-0.5">
-              {group.items.map((item) => (
-                <NavItem key={item.to} {...item} collapsed={collapsed} />
-              ))}
+              {group.items
+                .filter((item) => !item.permission || hasPermission(item.permission))
+                .map((item) => (
+                  <NavItem key={item.to} {...item} collapsed={collapsed} />
+                ))}
             </div>
           </div>
         ))}

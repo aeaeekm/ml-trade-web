@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import {
@@ -395,9 +395,9 @@ function PnLTab({ strategyId }) {
         <KpiCard label="Week P&L"      value={fmt(summary?.week_pnl)}   valueClass={pnlClass(summary?.week_pnl)}   loading={sumLoading} />
         <KpiCard label="Month P&L"     value={fmt(summary?.month_pnl)}  valueClass={pnlClass(summary?.month_pnl)}  loading={sumLoading} />
         <KpiCard label="Total P&L"     value={fmt(summary?.total_pnl)}  valueClass={pnlClass(summary?.total_pnl)}  loading={sumLoading} />
-        <KpiCard label="Win Rate"      value={summary?.win_rate != null ? `${(summary.win_rate * 100).toFixed(1)}%` : '—'} loading={sumLoading} />
-        <KpiCard label="Profit Factor" value={summary?.profit_factor?.toFixed(2) ?? '—'} loading={sumLoading} />
-        <KpiCard label="Max DD"        value={summary?.max_drawdown != null ? `${(summary.max_drawdown * 100).toFixed(1)}%` : '—'} valueClass="text-danger" loading={sumLoading} />
+        <KpiCard label="Win Rate"      value={summary?.win_rate != null ? `${parseFloat(summary.win_rate).toFixed(1)}%` : '—'} loading={sumLoading} />
+        <KpiCard label="Profit Factor" value={summary?.profit_factor != null ? parseFloat(summary.profit_factor).toFixed(2) : '—'} loading={sumLoading} />
+        <KpiCard label="Max DD"        value={summary?.max_drawdown != null ? `${parseFloat(summary.max_drawdown).toFixed(1)}%` : '—'} valueClass="text-danger" loading={sumLoading} />
       </div>
 
       {/* Daily P&L bar chart */}
@@ -447,16 +447,26 @@ export default function StrategyDetailPage() {
 
   const [detail,   setDetail]   = useState(null)
   const [loading,  setLoading]  = useState(true)
+  const [detailErr,setDetailErr]= useState('')
   const [toggling, setToggling] = useState(false)
   const [activeTab,setActiveTab]= useState(0)
 
-  useEffect(() => {
+  const loadDetail = useCallback(() => {
+    if (!strategyId) return
     setLoading(true)
+    setDetailErr('')
     strategiesApi.detail(strategyId)
-      .then(d => setDetail(d))
-      .catch(() => setDetail(null))
+      .then(d => { setDetail(d); setDetailErr('') })
+      .catch(e => {
+        console.error('Strategy detail error:', e)
+        const msg = e?.response?.data?.detail || `Failed to load strategy #${strategyId}`
+        setDetailErr(msg)
+        setDetail(null)
+      })
       .finally(() => setLoading(false))
   }, [strategyId])
+
+  useEffect(() => { loadDetail() }, [loadDetail])
 
   const handleToggle = async () => {
     if (!detail) return
@@ -507,6 +517,18 @@ export default function StrategyDetailPage() {
           </Button>
         </div>
       </div>
+
+      {/* ── Error state ── */}
+      {detailErr && !loading && (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-danger/10 border border-danger/20">
+          <Info size={16} className="text-danger shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-danger">Failed to load strategy</p>
+            <p className="text-xs text-muted mt-0.5">{detailErr}</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={loadDetail}>Retry</Button>
+        </div>
+      )}
 
       {/* ── Strategy title ── */}
       <div>

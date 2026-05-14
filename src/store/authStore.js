@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authApi } from '../api/auth'
+import { usersApi } from '../api/users'
 
 const useAuthStore = create(
   persist(
     (set, get) => ({
       token: null,
       user: null,
+      permissions: [],
       isLoading: true,
       isAuthenticated: false,
 
@@ -16,11 +18,18 @@ const useAuthStore = create(
         // Fetch user profile
         const user = await authApi.me(data.access_token)
         set({ user })
+        // Fetch permissions
+        try {
+          const permsData = await usersApi.myPermissions()
+          set({ permissions: permsData.permissions ?? [] })
+        } catch {
+          set({ permissions: [] })
+        }
         return user
       },
 
       logout: () => {
-        set({ token: null, user: null, isAuthenticated: false })
+        set({ token: null, user: null, permissions: [], isAuthenticated: false })
       },
 
       initialize: async () => {
@@ -31,10 +40,25 @@ const useAuthStore = create(
         }
         try {
           const user = await authApi.me(token)
-          set({ user, isAuthenticated: true, isLoading: false })
+          set({ user, isAuthenticated: true })
+          // Fetch permissions after restoring user
+          try {
+            const permsData = await usersApi.myPermissions()
+            set({ permissions: permsData.permissions ?? [] })
+          } catch {
+            set({ permissions: [] })
+          }
+          set({ isLoading: false })
         } catch {
-          set({ token: null, user: null, isAuthenticated: false, isLoading: false })
+          set({ token: null, user: null, permissions: [], isAuthenticated: false, isLoading: false })
         }
+      },
+
+      hasPermission: (key) => {
+        const { user, permissions } = get()
+        const role = user?.role_name || user?.plan
+        if (role === 'admin') return true
+        return permissions.includes(key)
       },
 
       setUser: (user) => set({ user }),

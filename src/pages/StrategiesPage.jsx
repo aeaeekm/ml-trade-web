@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -113,9 +113,16 @@ function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete, onNaviga
     onNavigate(strategy.id)
   }
 
-  const wr   = strategy.last_win_rate   != null ? `${(strategy.last_win_rate * 100).toFixed(1)}%` : '—'
-  const pf   = strategy.profit_factor   != null ? strategy.profit_factor.toFixed(2)               : '—'
-  const dd   = strategy.max_drawdown    != null ? `${(strategy.max_drawdown * 100).toFixed(1)}%`  : '—'
+  // WR stored as 0-1 in BacktestRun; max_drawdown as negative fraction e.g. -0.122
+  const wr   = strategy.last_win_rate != null
+    ? `${(parseFloat(strategy.last_win_rate) * 100).toFixed(1)}%`
+    : 'No data'
+  const pf   = strategy.profit_factor != null
+    ? parseFloat(strategy.profit_factor).toFixed(2)
+    : 'No data'
+  const dd   = strategy.max_drawdown != null
+    ? `${Math.abs(parseFloat(strategy.max_drawdown) * 100).toFixed(1)}%`
+    : 'No data'
   const assignments = strategy.assigned_accounts ?? 0
 
   return (
@@ -397,7 +404,7 @@ export default function StrategiesPage() {
   const [modalOpen,  setModalOpen]  = useState(false)
   const [editTarget, setEditTarget] = useState(null)
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
@@ -405,15 +412,23 @@ export default function StrategiesPage() {
         strategiesApi.list(),
         mt5AccountsApi.list(),
       ])
-      if (strats.status === 'fulfilled') setStrategies(Array.isArray(strats.value) ? strats.value : [])
-      if (accs.status   === 'fulfilled') setAccounts(Array.isArray(accs.value) ? accs.value : [])
-      if (strats.status === 'rejected') setError('Failed to load strategies.')
+      if (strats.status === 'fulfilled') {
+        const data = strats.value
+        setStrategies(Array.isArray(data) ? data : [])
+      } else {
+        setError('Failed to load strategies. Please retry.')
+        setStrategies([])
+      }
+      if (accs.status === 'fulfilled') setAccounts(Array.isArray(accs.value) ? accs.value : [])
+    } catch (e) {
+      console.error('StrategiesPage fetchAll error:', e)
+      setError('Unexpected error loading strategies.')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { fetchAll() }, [fetchAll])
 
   const handleToggle = async (id) => {
     try {
