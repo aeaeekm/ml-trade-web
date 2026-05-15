@@ -1,6 +1,20 @@
 # ML Trade — AI Trading Platform (Web UI)
 
-A modern, premium React frontend for the ML Trade algorithmic trading platform. Built with React + Vite + TailwindCSS.
+A modern, premium React frontend for the ML Trade algorithmic trading platform.  
+Built with React + Vite + TailwindCSS.
+
+> **Backend repo:** `C:\Users\JujiKura\Documents\Claude ML trade\` (local)  
+> **Full docs:** `project_memory/ONBOARDING.md` in the backend repo
+
+## Quick Start
+
+```bash
+npm install
+npm run dev    # http://localhost:3000
+```
+
+**Requires:** Backend API running at port 8000  
+**Login:** aeaeedkm@gmail.com / 112233
 
 ## Tech Stack
 
