@@ -3,18 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Monitor, AlertCircle, RefreshCw, ServerCrash } from 'lucide-react'
 import { mt5AccountsApi } from '../api/mt5accounts'
 import { eaStatusApi } from '../api/eaStatus'
+import { useSystemStatus } from '../hooks/useSystemStatus'
 import Button from '../components/ui/Button'
 import StatusDot from '../components/ui/StatusDot'
 import MT5AccountCard from '../components/features/MT5AccountCard'
 import AccountFormModal from '../components/features/AccountFormModal'
 import Skeleton from '../components/ui/Skeleton'
-
-function toStatus(val) {
-  if (val === true  || val === 'online'  || val === 'connected') return 'online'
-  if (val === false || val === 'offline' || val === 'down')      return 'offline'
-  if (val === 'warning' || val === 'degraded')                   return 'warning'
-  return 'unknown'
-}
 
 function CardSkeleton() {
   return (
@@ -54,22 +48,23 @@ function CardSkeleton() {
 }
 
 export default function MT5AccountsPage() {
-  const [accounts, setAccounts]   = useState([])
-  const [sysStatus, setSysStatus] = useState(null)
-  const [loading, setLoading]     = useState(true)
-  const [error, setError]         = useState(null)
-  const [modalOpen, setModalOpen] = useState(false)
+  const [accounts, setAccounts]     = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState(null)
+  const [modalOpen, setModalOpen]   = useState(false)
   const [editTarget, setEditTarget] = useState(null)   // null = create mode
+
+  // Single source of truth for system status — shared with Dashboard and ServerStatusBar
+  const { signalStatus, apiStatus, mt5Status, activeEAs, totalEAs } = useSystemStatus()
 
   // Fetch accounts + EA heartbeat status, merge them
   const fetchAll = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [accountData, eaData, sysData] = await Promise.all([
+      const [accountData, eaData] = await Promise.all([
         mt5AccountsApi.list(),
         eaStatusApi.list(),
-        eaStatusApi.systemStatus(),
       ])
       const eaMap = {}
       ;(eaData || []).forEach(ea => { eaMap[ea.broker_account_id] = ea })
@@ -78,7 +73,6 @@ export default function MT5AccountsPage() {
         _ea: eaMap[acc.id] || null,
       }))
       setAccounts(merged)
-      setSysStatus(sysData)
     } catch {
       setError('Failed to load MT5 accounts.')
     } finally {
@@ -124,12 +118,6 @@ export default function MT5AccountsPage() {
     }
   }
 
-  // Derived status values from real data
-  const signalStatus = toStatus(sysStatus?.signal_server)
-  const apiStatus    = toStatus(sysStatus?.api_server)
-  const activeEas    = sysStatus?.active_eas ?? accounts.filter(a => a._ea?.status === 'RUNNING').length
-  const totalEas     = accounts.length
-
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Page header */}
@@ -143,17 +131,20 @@ export default function MT5AccountsPage() {
         </Button>
       </div>
 
-      {/* Status bar */}
+      {/* Status bar — uses same hook as Dashboard, so values are always consistent */}
       <div className="flex flex-wrap items-center gap-4 px-4 py-2.5 rounded-xl bg-surface border border-border text-xs">
         <StatusDot status={signalStatus} label="Signal Server" />
         <StatusDot status={apiStatus}    label="API Server"    />
-        <span className="text-muted">
-          Active EAs:{' '}
-          <span className={activeEas > 0 ? 'text-success font-semibold' : 'text-muted font-semibold'}>
-            {activeEas}
+        <StatusDot status={mt5Status}    label="MT5 Connector" />
+        {activeEAs !== null && (
+          <span className="text-muted">
+            Active EAs:{' '}
+            <span className={activeEAs > 0 ? 'text-success font-semibold' : 'text-muted font-semibold'}>
+              {activeEAs}
+            </span>
+            {totalEAs !== null && <span className="text-border"> / {totalEAs}</span>}
           </span>
-          {totalEas > 0 && <span className="text-border"> / {totalEas}</span>}
-        </span>
+        )}
       </div>
 
       {/* Error state */}
@@ -161,7 +152,7 @@ export default function MT5AccountsPage() {
         <div className="flex items-center gap-3 p-4 rounded-xl bg-danger/10 border border-danger/20 text-sm text-danger">
           <AlertCircle size={16} className="shrink-0" />
           <span className="flex-1">{error}</span>
-          <Button variant="ghost" size="sm" icon={<RefreshCw size={13} />} onClick={fetchAccounts}>
+          <Button variant="ghost" size="sm" icon={<RefreshCw size={13} />} onClick={fetchAll}>
             Retry
           </Button>
         </div>

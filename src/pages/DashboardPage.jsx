@@ -7,12 +7,11 @@ import {
 import clsx from 'clsx'
 import useAuthStore from '../store/authStore'
 import { portfolioApi }  from '../api/portfolio'
-import { tradesApi }     from '../api/trades'
 import { strategiesApi } from '../api/strategies'
 import { signalsApi }    from '../api/signals'
 import { mt5AccountsApi} from '../api/mt5accounts'
-import { systemApi }     from '../api/system'
 import { dashboardApi }  from '../api/dashboard'
+import { useSystemStatus } from '../hooks/useSystemStatus'
 import Card              from '../components/ui/Card'
 import Badge             from '../components/ui/Badge'
 import Skeleton          from '../components/ui/Skeleton'
@@ -57,44 +56,6 @@ function KpiCard({ label, value, icon: Icon, delta, deltaLabel, variant, loading
   )
 }
 
-/* ── Server status bar ── */
-function toStatus(val) {
-  if (val === true  || val === 'online'  || val === 'connected') return 'online'
-  if (val === false || val === 'offline' || val === 'down')      return 'offline'
-  if (val === 'warning' || val === 'degraded')                   return 'warning'
-  return 'unknown'
-}
-
-function formatHb(ts) {
-  if (!ts) return null
-  const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000)
-  if (s < 60)   return `${s}s ago`
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`
-  return `${Math.floor(s / 3600)}h ago`
-}
-
-function ServerStatusBar({ sysStatus }) {
-  const hb = formatHb(sysStatus?.last_heartbeat)
-  return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-4 py-2 rounded-xl
-                    bg-surface border border-border text-xs">
-      <StatusDot status={toStatus(sysStatus?.signal_server)}  label="Signal Server"  />
-      <StatusDot status={toStatus(sysStatus?.api_server)}     label="API Server"     />
-      <StatusDot status={toStatus(sysStatus?.mt5_connector)}  label="MT5 Connector"  />
-      {hb && (
-        <span className="text-muted">
-          Last heartbeat: <span className="text-text font-medium">{hb}</span>
-        </span>
-      )}
-      {sysStatus?.active_eas != null && (
-        <span className="text-muted">
-          Active EAs: <span className="text-text font-medium">{sysStatus.active_eas}</span>
-        </span>
-      )}
-    </div>
-  )
-}
-
 /* ─── Page ─── */
 export default function DashboardPage() {
   const { user } = useAuthStore()
@@ -104,11 +65,13 @@ export default function DashboardPage() {
   const [signalSummary, setSignalSummary]= useState(null)
   const [strategies,    setStrategies]   = useState([])
   const [accounts,      setAccounts]     = useState([])
-  const [sysStatus,     setSysStatus]    = useState(null)
   const [equity,        setEquity]       = useState([])
   const [equityLoading, setEquityLoading]= useState(false)
   const [loading,       setLoading]      = useState(true)
   const [selectedAcct,  setSelectedAcct] = useState('all')
+
+  // Single source of truth for system status — polls /system/status every 30s
+  const { signalStatus, apiStatus, mt5Status, activeEAs, totalEAs, lastHb, error: statusError } = useSystemStatus()
 
   const { range, setRange, startDate, setStartDate, endDate, setEndDate, toQueryParams } = useTimeRange('1m')
 
@@ -132,26 +95,22 @@ export default function DashboardPage() {
     const fetchAll = async () => {
       setLoading(true)
       try {
-        const [sum, sigs, sigSum, strats, accs, sys] = await Promise.allSettled([
+        const [sum, sigs, sigSum, strats, accs] = await Promise.allSettled([
           portfolioApi.summary(),
           signalsApi.recent(10),
           signalsApi.summary(),
           strategiesApi.list(),
           mt5AccountsApi.list(),
-          systemApi.status(),
         ])
         if (sum.status    === 'fulfilled') setSummary(sum.value)
         if (sigs.status   === 'fulfilled') setSignals(Array.isArray(sigs.value) ? sigs.value : [])
         if (sigSum.status === 'fulfilled') setSignalSummary(sigSum.value)
         if (strats.status === 'fulfilled') setStrategies(Array.isArray(strats.value) ? strats.value.slice(0, 5) : [])
         if (accs.status   === 'fulfilled') setAccounts(Array.isArray(accs.value) ? accs.value : [])
-        if (sys.status    === 'fulfilled') setSysStatus(sys.value)
       } catch {}
       finally { setLoading(false) }
     }
     fetchAll()
-    const id = setInterval(() => systemApi.status().then(setSysStatus), 30_000)
-    return () => clearInterval(id)
   }, [])
 
   // Derived values
@@ -236,7 +195,42 @@ export default function DashboardPage() {
       </div>
 
       {/* Server status bar */}
-      <ServerStatusBar sysStatus={sysStatus} />
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-4 py-2 rounded-xl
+                      bg-surface border border-border text-xs">
+        {statusError ? (
+          <>
+            <AlertTriangle size={13} className="text-warning shrink-0" />
+            <span className="text-muted">Status unavailable</span>
+          </>
+        ) : (
+          <>
+            <StatusDot status={signalStatus} label="Signal Server"  />
+            <StatusDot status={apiStatus}    label="API Server"     />
+            <StatusDot status={mt5Status}    label="MT5 Connector"  />
+            {lastHb && (
+              <span className="text-muted">
+                Last heartbeat:{' '}
+                <span className="text-text font-medium">
+                  {(() => {
+                    const s = Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000)
+                    if (s < 60)   return `${s}s ago`
+                    if (s < 3600) return `${Math.floor(s / 60)}m ago`
+                    return `${Math.floor(s / 3600)}h ago`
+                  })()}
+                </span>
+              </span>
+            )}
+            {activeEAs !== null && (
+              <span className="text-muted">
+                Active EAs:{' '}
+                <span className="text-text font-medium">
+                  {activeEAs}{totalEAs !== null ? ` / ${totalEAs}` : ''}
+                </span>
+              </span>
+            )}
+          </>
+        )}
+      </div>
 
       {/* KPI Row 1 */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">

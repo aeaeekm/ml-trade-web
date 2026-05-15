@@ -534,8 +534,9 @@ function FilterBar({ filters, onChange, strategies, activeCount, onClear }) {
 // Empty State
 // ─────────────────────────────────────────────
 
-function EmptyState({ hasFilters, onClear, onRefresh }) {
+function EmptyState({ hasFilters, onClear, onRefresh, summary }) {
   const navigate = useNavigate()
+  const allExpired = summary?.expired > 0 && (summary?.active ?? 0) === 0
   return (
     <tr>
       <td colSpan={12} className="px-4 py-16 text-center">
@@ -544,6 +545,18 @@ function EmptyState({ hasFilters, onClear, onRefresh }) {
             <Radio size={22} className="text-accent" />
           </div>
           <h3 className="text-base font-semibold text-text">No signals found</h3>
+
+          {/* Expired signals hint — shown when signals exist but are all expired */}
+          {allExpired && !hasFilters && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-warning/10 border border-warning/20 text-left">
+              <span className="text-warning text-xs mt-0.5 shrink-0">⚠</span>
+              <p className="text-xs text-warning">
+                <span className="font-semibold">{summary.expired} expired signal{summary.expired !== 1 ? 's' : ''}</span>{' '}
+                exist in the database. Signals expire after 15 minutes. Use status filter or date range to view them.
+              </p>
+            </div>
+          )}
+
           <div className="text-sm text-muted text-left bg-surface border border-border rounded-xl p-4 space-y-1">
             <p className="font-medium text-text mb-2">Possible reasons:</p>
             <ul className="space-y-1.5 list-disc list-inside">
@@ -856,6 +869,7 @@ export default function SignalsPage() {
                   hasFilters={hasFilters}
                   onClear={handleClearFilters}
                   onRefresh={fetchSignals}
+                  summary={summary}
                 />
               </tbody>
             ) : (
