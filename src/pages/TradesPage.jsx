@@ -1,15 +1,17 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, formatDistanceToNow } from 'date-fns'
 import {
   ArrowUpRight, ArrowDownRight, RefreshCw, Download, Search,
   ChevronDown, ChevronLeft, ChevronRight, AlertTriangle,
   Filter, X, CheckSquare, Square, ExternalLink,
+  TrendingUp, TrendingDown, Activity,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { tradesApi } from '../api/trades'
 import Button from '../components/ui/Button'
 import Badge from '../components/ui/Badge'
 import Select from '../components/ui/Select'
+import Pagination from '../components/ui/Pagination'
 import { Table, Thead, Tbody, Th, Tr, Td, TableSkeleton } from '../components/ui/Table'
 
 // ─────────────────────────────────────────────
@@ -22,6 +24,18 @@ function formatTime(ts) {
     return format(typeof ts === 'string' ? parseISO(ts) : new Date(ts), 'MMM d, HH:mm')
   } catch {
     return ts
+  }
+}
+
+function timeAgoShort(ts) {
+  if (!ts) return null
+  try {
+    return formatDistanceToNow(
+      typeof ts === 'string' ? parseISO(ts) : new Date(ts),
+      { addSuffix: true }
+    )
+  } catch {
+    return null
   }
 }
 
@@ -59,10 +73,7 @@ function DirectionBadge({ direction }) {
       'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold',
       isBuy ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger',
     )}>
-      {isBuy
-        ? <ArrowUpRight size={11} />
-        : <ArrowDownRight size={11} />
-      }
+      {isBuy ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
       {direction ?? '—'}
     </span>
   )
@@ -87,8 +98,168 @@ function StatusBadge({ status }) {
       </span>
     )
   }
+  return <Badge variant="neutral">Closed</Badge>
+}
+
+// ─────────────────────────────────────────────
+// Unrealized P&L Summary Panel
+// ─────────────────────────────────────────────
+
+function UnrealizedPnLPanel({ accountIds, symbol, direction }) {
+  const [summary,     setSummary]     = useState(null)
+  const [fetching,    setFetching]    = useState(false)
+  const [fetchError,  setFetchError]  = useState(false)
+  const [lastUpdated, setLastUpdated] = useState(null)
+  const [secondsAgo,  setSecondsAgo]  = useState(0)
+  const pollingRef    = useRef(null)
+  const tickerRef     = useRef(null)
+
+  const fetchSummary = useCallback(async () => {
+    setFetching(true)
+    setFetchError(false)
+    try {
+      const params = {}
+      if (accountIds?.length) params.mt5_account_ids = accountIds.join(',')
+      if (symbol)             params.symbol    = symbol
+      if (direction)          params.direction = direction
+
+      const data = await tradesApi.positionsSummary(params)
+      setSummary(data)
+      setLastUpdated(new Date())
+      setSecondsAgo(0)
+    } catch {
+      setFetchError(true)
+    } finally {
+      setFetching(false)
+    }
+  }, [accountIds, symbol, direction])
+
+  // Start polling every 10 s
+  useEffect(() => {
+    fetchSummary()
+    pollingRef.current = setInterval(fetchSummary, 10000)
+    return () => {
+      clearInterval(pollingRef.current)
+      clearInterval(tickerRef.current)
+    }
+  }, [fetchSummary])
+
+  // Tick up seconds-ago counter every second
+  useEffect(() => {
+    tickerRef.current = setInterval(() => {
+      if (lastUpdated) {
+        setSecondsAgo(Math.floor((Date.now() - lastUpdated.getTime()) / 1000))
+      }
+    }, 1000)
+    return () => clearInterval(tickerRef.current)
+  }, [lastUpdated])
+
+  // Status indicator
+  const statusBadge = fetchError ? (
+    <span className="inline-flex items-center gap-1 text-[11px] text-danger font-medium">
+      <AlertTriangle size={11} />
+      Error updating
+    </span>
+  ) : fetching ? (
+    <span className="inline-flex items-center gap-1 text-[11px] text-accent font-medium">
+      <RefreshCw size={11} className="animate-spin" />
+      Updating…
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-[11px] text-success font-medium">
+      <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+      Live · {secondsAgo}s ago
+    </span>
+  )
+
+  const noPositions = !summary || summary.open_positions_count === 0
+
   return (
-    <Badge variant="neutral">Closed</Badge>
+    <div className="bg-bg border border-border rounded-xl shadow-card p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Activity size={15} className="text-accent" />
+          <h3 className="text-sm font-semibold text-text">Unrealized P&amp;L</h3>
+        </div>
+        <div className="flex items-center gap-3">
+          {statusBadge}
+          <button
+            type="button"
+            onClick={fetchSummary}
+            disabled={fetching}
+            className="p-1 rounded text-muted hover:text-text transition-colors disabled:opacity-50"
+            aria-label="Refresh positions"
+          >
+            <RefreshCw size={13} className={fetching ? 'animate-spin' : ''} />
+          </button>
+        </div>
+      </div>
+
+      {noPositions ? (
+        <p className="text-sm text-muted text-center py-4">No open positions</p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-6 gap-3">
+          {/* Open positions */}
+          <div className="bg-surface rounded-lg p-3">
+            <p className="text-[10px] text-muted uppercase tracking-wide mb-1">Open Positions</p>
+            <p className="text-xl font-bold text-text">{summary.open_positions_count ?? 0}</p>
+            {summary.total_volume != null && (
+              <p className="text-[10px] text-muted mt-1">Vol: {Number(summary.total_volume).toFixed(2)}</p>
+            )}
+          </div>
+
+          {/* Floating P&L */}
+          <div className="bg-surface rounded-lg p-3">
+            <p className="text-[10px] text-muted uppercase tracking-wide mb-1">Floating P&amp;L</p>
+            <p className={clsx(
+              'text-xl font-bold',
+              summary.total_unrealized_pnl >= 0 ? 'text-success' : 'text-danger',
+            )}>
+              {summary.total_unrealized_pnl >= 0 ? '+' : ''}
+              ${Number(summary.total_unrealized_pnl ?? 0).toFixed(2)}
+            </p>
+          </div>
+
+          {/* Float Profit */}
+          <div className="bg-surface rounded-lg p-3">
+            <p className="text-[10px] text-muted uppercase tracking-wide mb-1">Float Profit</p>
+            <p className="text-xl font-bold text-success">
+              +${Number(summary.floating_profit ?? 0).toFixed(2)}
+            </p>
+          </div>
+
+          {/* Float Loss */}
+          <div className="bg-surface rounded-lg p-3">
+            <p className="text-[10px] text-muted uppercase tracking-wide mb-1">Float Loss</p>
+            <p className="text-xl font-bold text-danger">
+              -${Math.abs(Number(summary.floating_loss ?? 0)).toFixed(2)}
+            </p>
+          </div>
+
+          {/* By Account (show first 2) */}
+          {summary.by_account?.length > 0 && (
+            <div className="bg-surface rounded-lg p-3 sm:col-span-2">
+              <p className="text-[10px] text-muted uppercase tracking-wide mb-1">By Account</p>
+              <div className="space-y-1">
+                {summary.by_account.slice(0, 3).map(acc => (
+                  <div key={acc.account_id} className="flex items-center justify-between text-xs">
+                    <span className="text-muted truncate max-w-[100px]" title={acc.account_name}>
+                      {acc.account_name}
+                    </span>
+                    <span className={clsx(
+                      'font-semibold',
+                      acc.floating_pnl >= 0 ? 'text-success' : 'text-danger',
+                    )}>
+                      {acc.floating_pnl >= 0 ? '+' : ''}${Number(acc.floating_pnl ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -100,7 +271,6 @@ function MultiSelect({ label, options, value, onChange, getLabel = o => o.name, 
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
-  // Close on outside click
   useEffect(() => {
     function handler(e) {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false)
@@ -110,22 +280,14 @@ function MultiSelect({ label, options, value, onChange, getLabel = o => o.name, 
   }, [])
 
   function toggle(id) {
-    onChange(
-      value.includes(id) ? value.filter(v => v !== id) : [...value, id]
-    )
+    onChange(value.includes(id) ? value.filter(v => v !== id) : [...value, id])
   }
 
-  function clearAll() { onChange([]) }
-
-  // Build trigger label
   let triggerLabel
   if (value.length === 0) {
     triggerLabel = `All ${label}`
   } else if (value.length <= 2) {
-    triggerLabel = options
-      .filter(o => value.includes(getValue(o)))
-      .map(o => getLabel(o))
-      .join(', ')
+    triggerLabel = options.filter(o => value.includes(getValue(o))).map(o => getLabel(o)).join(', ')
   } else {
     const first = options.find(o => value.includes(getValue(o)))
     triggerLabel = `${first ? getLabel(first) : ''} +${value.length - 1} more`
@@ -154,11 +316,10 @@ function MultiSelect({ label, options, value, onChange, getLabel = o => o.name, 
 
       {open && (
         <div className="absolute left-0 top-[calc(100%+4px)] z-50 w-56 bg-bg border border-border rounded-xl shadow-lg py-1 max-h-64 overflow-y-auto">
-          {/* Clear link */}
           {value.length > 0 && (
             <button
               type="button"
-              onClick={clearAll}
+              onClick={() => onChange([])}
               className="w-full text-left px-3 py-1.5 text-xs text-accent hover:bg-surface transition-colors"
             >
               Clear selection
@@ -258,7 +419,7 @@ function SyncDropdown({ accounts, onSync, syncing }) {
 }
 
 // ─────────────────────────────────────────────
-// No-data empty state / sync status panel
+// Empty state
 // ─────────────────────────────────────────────
 
 function EmptyState({ syncStatus, onSync, onClearFilters, syncing, hasActiveFilters }) {
@@ -372,173 +533,94 @@ function Toast({ message, type = 'info', onClose }) {
 }
 
 // ─────────────────────────────────────────────
-// Pagination
-// ─────────────────────────────────────────────
-
-function Pagination({ page, pageSize, total, onChange }) {
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const start = (page - 1) * pageSize + 1
-  const end = Math.min(page * pageSize, total)
-
-  if (total === 0) return null
-
-  const pages = []
-  for (let i = Math.max(1, page - 2); i <= Math.min(totalPages, page + 2); i++) pages.push(i)
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-border">
-      <span className="text-xs text-muted">
-        Showing <span className="font-medium text-text">{start}–{end}</span> of{' '}
-        <span className="font-medium text-text">{total}</span> trades
-      </span>
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          disabled={page === 1}
-          onClick={() => onChange(page - 1)}
-          className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          <ChevronLeft size={16} />
-        </button>
-        {pages[0] > 1 && (
-          <>
-            <button type="button" onClick={() => onChange(1)}
-              className="px-2.5 py-1 rounded-lg text-xs text-muted hover:bg-surface transition-colors">1</button>
-            {pages[0] > 2 && <span className="px-1 text-muted text-xs">…</span>}
-          </>
-        )}
-        {pages.map(p => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => onChange(p)}
-            className={clsx(
-              'px-2.5 py-1 rounded-lg text-xs transition-colors',
-              p === page
-                ? 'bg-accent text-white font-semibold'
-                : 'text-muted hover:bg-surface',
-            )}
-          >
-            {p}
-          </button>
-        ))}
-        {pages[pages.length - 1] < totalPages && (
-          <>
-            {pages[pages.length - 1] < totalPages - 1 && <span className="px-1 text-muted text-xs">…</span>}
-            <button type="button" onClick={() => onChange(totalPages)}
-              className="px-2.5 py-1 rounded-lg text-xs text-muted hover:bg-surface transition-colors">
-              {totalPages}
-            </button>
-          </>
-        )}
-        <button
-          type="button"
-          disabled={page === totalPages}
-          onClick={() => onChange(page + 1)}
-          className="p-1.5 rounded-lg text-muted hover:text-text hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────
 // Main TradesPage
 // ─────────────────────────────────────────────
 
-const PAGE_SIZE = 50
-
 export default function TradesPage() {
   // ── Data state ─────────────────────────────
-  const [trades, setTrades]           = useState([])
-  const [total, setTotal]             = useState(0)
-  const [openCount, setOpenCount]     = useState(0)
-  const [closedCount, setClosedCount] = useState(0)
-  const [stats, setStats]             = useState(null)  // computed from filtered trades
-  const [filterOptions, setFilterOptions] = useState({ accounts: [], symbols: [] })
-  const [syncStatus, setSyncStatus]   = useState([])
+  const [trades,       setTrades]       = useState([])
+  const [total,        setTotal]        = useState(0)
+  const [openCount,    setOpenCount]    = useState(0)
+  const [closedCount,  setClosedCount]  = useState(0)
+  const [stats,        setStats]        = useState(null)
+  const [filterOptions,setFilterOptions]= useState({ accounts: [], symbols: [] })
+  const [syncStatus,   setSyncStatus]   = useState([])
 
   // ── Loading / UI state ─────────────────────
-  const [loading, setLoading]         = useState(true)
-  const [syncing, setSyncing]         = useState(false)
-  const [toast, setToast]             = useState(null)   // { message, type }
-  const autoRefreshTimer              = useRef(null)
+  const [loading,   setLoading]  = useState(true)
+  const [syncing,   setSyncing]  = useState(false)
+  const [toast,     setToast]    = useState(null)
+  const autoRefreshTimer         = useRef(null)
 
   // ── Filters ────────────────────────────────
-  const [search, setSearch]           = useState('')
-  const [status, setStatus]           = useState('')        // '' | 'open' | 'closed' | 'all'
-  const [direction, setDirection]     = useState('')        // '' | 'BUY' | 'SELL'
-  const [profitType, setProfitType]   = useState('')        // '' | 'profit' | 'loss'
+  const [search,           setSearch]           = useState('')
+  const [status,           setStatus]           = useState('')
+  const [direction,        setDirection]        = useState('')
+  const [profitType,       setProfitType]       = useState('')
   const [selectedAccounts, setSelectedAccounts] = useState([])
-  const [selectedSymbols, setSelectedSymbols]   = useState([])
-  const [startDate, setStartDate]     = useState('')
-  const [endDate, setEndDate]         = useState('')
+  const [selectedSymbols,  setSelectedSymbols]  = useState([])
+  const [startDate,        setStartDate]        = useState('')
+  const [endDate,          setEndDate]          = useState('')
 
-  // ── Sorting (client-side on current page) ──
-  const [sortCol, setSortCol]         = useState('open_time')
-  const [sortDir, setSortDir]         = useState('desc')
+  // ── Sorting ────────────────────────────────
+  const [sortCol, setSortCol] = useState('open_time')
+  const [sortDir, setSortDir] = useState('desc')
 
   // ── Pagination ─────────────────────────────
-  const [page, setPage]               = useState(1)
+  const [page,     setPage]     = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
-  // ── Count active filters ───────────────────
+  // ── Active filter count ────────────────────
   const activeFilterCount = useMemo(() => {
     let count = 0
-    if (search)                   count++
-    if (status)                   count++
-    if (direction)                count++
-    if (profitType)               count++
-    if (selectedAccounts.length)  count++
-    if (selectedSymbols.length)   count++
-    if (startDate)                count++
-    if (endDate)                  count++
+    if (search)                  count++
+    if (status)                  count++
+    if (direction)               count++
+    if (profitType)              count++
+    if (selectedAccounts.length) count++
+    if (selectedSymbols.length)  count++
+    if (startDate)               count++
+    if (endDate)                 count++
     return count
   }, [search, status, direction, profitType, selectedAccounts, selectedSymbols, startDate, endDate])
 
   // ── Build API params ───────────────────────
-  function buildParams(pageOverride) {
+  function buildParams(pageOverride, pageSizeOverride) {
     const params = {
-      page: pageOverride ?? page,
-      page_size: PAGE_SIZE,
+      page:      pageOverride      ?? page,
+      page_size: pageSizeOverride  ?? pageSize,
     }
-    if (status)                   params.status = status
-    if (direction)                params.direction = direction
+    if (status)                   params.status      = status
+    if (direction)                params.direction   = direction
     if (profitType)               params.profit_type = profitType
-    if (search)                   params.search = search
-    if (startDate)                params.start_date = startDate
-    if (endDate)                  params.end_date = endDate
+    if (search)                   params.search      = search
+    if (startDate)                params.start_date  = startDate
+    if (endDate)                  params.end_date    = endDate
     if (selectedAccounts.length)  params.mt5_account_ids = selectedAccounts.join(',')
-    if (selectedSymbols.length)   params.symbol = selectedSymbols.join(',')
+    if (selectedSymbols.length)   params.symbol      = selectedSymbols.join(',')
     return params
   }
 
   // ── Fetch trades ───────────────────────────
-  const fetchTrades = useCallback(async (pageOverride) => {
+  const fetchTrades = useCallback(async (pageOverride, pageSizeOverride) => {
     setLoading(true)
-    const params = buildParams(pageOverride)
+    const params = buildParams(pageOverride, pageSizeOverride)
 
     if (import.meta.env.DEV) {
       console.log('[TradesPage] Fetching with params:', params)
     }
 
     const result = await tradesApi.list(params)
-
-    if (import.meta.env.DEV) {
-      console.log('[TradesPage] Got', result.total, 'trades (', result.open_count, 'open,', result.closed_count, 'closed)')
-    }
-
     setTrades(Array.isArray(result.trades) ? result.trades : [])
     setTotal(result.total ?? 0)
     setOpenCount(result.open_count ?? 0)
     setClosedCount(result.closed_count ?? 0)
-    if (result.stats) setStats(result.stats)   // stats computed from ALL filtered rows
+    if (result.stats) setStats(result.stats)
     setLoading(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, direction, profitType, selectedAccounts, selectedSymbols, startDate, endDate, page])
+  }, [search, status, direction, profitType, selectedAccounts, selectedSymbols, startDate, endDate, page, pageSize])
 
-  // ── Fetch filter options + sync status (once on mount) ──
+  // ── Fetch filter options + sync status ──
   useEffect(() => {
     async function init() {
       const [opts, syncSt] = await Promise.all([
@@ -551,23 +633,23 @@ export default function TradesPage() {
     init()
   }, [])
 
-  // ── Re-fetch when filters change (reset to page 1) ──
+  // ── Re-fetch when filters change ──
   useEffect(() => {
     setPage(1)
-    fetchTrades(1)
+    fetchTrades(1, pageSize)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, status, direction, profitType, selectedAccounts, selectedSymbols, startDate, endDate])
 
-  // ── Re-fetch when page changes ──
+  // ── Re-fetch when page or pageSize changes ──
   useEffect(() => {
-    fetchTrades(page)
+    fetchTrades(page, pageSize)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page])
+  }, [page, pageSize])
 
-  // ── Cleanup timer on unmount ──
+  // ── Cleanup ──
   useEffect(() => () => clearTimeout(autoRefreshTimer.current), [])
 
-  // ── Sort current page trades ───────────────
+  // ── Sort current page ─────────────────────
   const sortedTrades = useMemo(() => {
     const copy = [...trades]
     copy.sort((a, b) => {
@@ -586,6 +668,14 @@ export default function TradesPage() {
       setSortCol(col)
       setSortDir('asc')
     }
+  }
+
+  // ── Pagination handlers ────────────────────
+  const handlePage = (p) => setPage(p)
+
+  const handlePageSize = (ps) => {
+    setPageSize(ps)
+    setPage(1)
   }
 
   // ── Clear all filters ──────────────────────
@@ -611,9 +701,8 @@ export default function TradesPage() {
       setToast({ message: `Sync failed: ${res.error}`, type: 'error' })
     } else {
       setToast({ message: 'Sync started — data will appear in 10–30 seconds', type: 'info' })
-      // Auto-refresh after 15 s
       autoRefreshTimer.current = setTimeout(() => {
-        fetchTrades(page)
+        fetchTrades(page, pageSize)
         tradesApi.syncStatus().then(s => setSyncStatus(Array.isArray(s) ? s : []))
       }, 15000)
     }
@@ -621,16 +710,27 @@ export default function TradesPage() {
 
   // ── Export CSV ─────────────────────────────
   async function handleExportCsv() {
-    // Fetch all pages with same filters
     const params = buildParams(1)
     params.page_size = total || 1000
     const result = await tradesApi.list(params)
     exportCsv(Array.isArray(result.trades) ? result.trades : [])
   }
 
-  // ── Summary stat values — from filtered API response ──────────────────────
+  // ── Summary stat values ────────────────────
   const winRate  = stats?.win_rate  != null ? `${Number(stats.win_rate).toFixed(1)}%` : null
   const totalPnl = stats?.total_pnl != null ? stats.total_pnl : null
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+
+  const paginationProps = {
+    page,
+    totalPages,
+    total,
+    pageSize,
+    onPage:     handlePage,
+    onPageSize: handlePageSize,
+    pageSizeOptions: [25, 50, 100, 200],
+  }
 
   // ────────────────────────────────────────────
   return (
@@ -660,13 +760,20 @@ export default function TradesPage() {
         </div>
       </div>
 
+      {/* ── Unrealized P&L Panel ── */}
+      <UnrealizedPnLPanel
+        accountIds={selectedAccounts}
+        symbol={selectedSymbols.join(',')}
+        direction={direction}
+      />
+
       {/* ── Summary stat cards ── */}
       {(total > 0 || stats?.has_data) && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {[
-            { label: 'Total Trades', value: total, key: 'total' },
-            { label: 'Open Positions', value: openCount, key: 'open' },
-            { label: 'Closed Trades', value: closedCount, key: 'closed' },
+            { label: 'Total Trades',   value: total,      key: 'total' },
+            { label: 'Open Positions', value: openCount,  key: 'open' },
+            { label: 'Closed Trades',  value: closedCount, key: 'closed' },
             {
               label: 'Total P&L',
               value: totalPnl != null
@@ -676,19 +783,13 @@ export default function TradesPage() {
               colored: totalPnl != null,
               positive: totalPnl != null && totalPnl >= 0,
             },
-            {
-              label: 'Win Rate',
-              value: winRate ?? '—',
-              key: 'winrate',
-            },
+            { label: 'Win Rate', value: winRate ?? '—', key: 'winrate' },
           ].map(({ label, value, key, colored, positive }) => (
             <div key={key} className="bg-bg border border-border rounded-xl p-4 shadow-card">
               <p className="text-xs text-muted uppercase tracking-wide">{label}</p>
               <p className={clsx(
                 'text-xl font-bold mt-1 tracking-tight',
-                colored
-                  ? positive ? 'text-success' : 'text-danger'
-                  : 'text-text',
+                colored ? (positive ? 'text-success' : 'text-danger') : 'text-text',
               )}>
                 {value}
               </p>
@@ -816,7 +917,7 @@ export default function TradesPage() {
         </div>
       </div>
 
-      {/* ── Empty state (when no data and not loading) ── */}
+      {/* ── Empty state ── */}
       {!loading && trades.length === 0 && (
         <EmptyState
           syncStatus={syncStatus}
@@ -830,6 +931,9 @@ export default function TradesPage() {
       {/* ── Trade table (show when loading OR has trades) ── */}
       {(loading || trades.length > 0) && (
         <div className="bg-bg border border-border rounded-xl shadow-card overflow-hidden">
+          {/* Top pagination */}
+          {total > 0 && <Pagination {...paginationProps} />}
+
           <Table className="border-0 rounded-none">
             <Thead>
               <tr>
@@ -900,12 +1004,8 @@ export default function TradesPage() {
             )}
           </Table>
 
-          <Pagination
-            page={page}
-            pageSize={PAGE_SIZE}
-            total={total}
-            onChange={setPage}
-          />
+          {/* Bottom pagination */}
+          <Pagination {...paginationProps} />
         </div>
       )}
 

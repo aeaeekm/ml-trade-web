@@ -1,18 +1,17 @@
 import client from './client'
 
 export const modelsApi = {
-  list: async () => {
-    const res = await client.get('/models/')
-    return res.data
-  },
+  list: (params = {}) =>
+    client.get('/models/', { params })
+      .then(r => r.data)
+      .catch(() => ({
+        data: [],
+        pagination: { page: 1, page_size: 25, total: 0, total_pages: 0 },
+      })),
 
-  train: async (strategyId) => {
-    const res = await client.post(`/models/train/${strategyId}`)
-    return res.data
-  },
+  train: (strategyId) =>
+    client.post(`/models/train/${strategyId}`).then(r => r.data),
 
-  getStatus: async (modelId) => {
-    const res = await client.get(`/models/${modelId}`)
-    return res.data
-  },
+  get: (id) =>
+    client.get(`/models/${id}`).then(r => r.data),
 }

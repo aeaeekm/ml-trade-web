@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { strategiesApi } from '../api/strategies'
 import { mt5AccountsApi } from '../api/mt5accounts'
+import { displayName } from '../utils/strategyDisplay'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import Toggle from '../components/ui/Toggle'
@@ -93,7 +94,6 @@ function DotMenu({ onEdit, onDelete }) {
 function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete, onNavigate }) {
   const [toggling,    setToggling]    = useState(false)
   const [assignOpen,  setAssignOpen]  = useState(false)
-  const [expanded,    setExpanded]    = useState(false)
 
   const handleToggle = async (e) => {
     e?.stopPropagation()
@@ -104,7 +104,8 @@ function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete, onNaviga
 
   const handleDelete = (e) => {
     e?.stopPropagation()
-    if (window.confirm(`Delete strategy "${strategy.name}"? This cannot be undone.`)) {
+    const name = displayName(strategy)
+    if (window.confirm(`Delete strategy "${name}"? This cannot be undone.`)) {
       onDelete(strategy.id)
     }
   }
@@ -113,7 +114,7 @@ function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete, onNaviga
     onNavigate(strategy.id)
   }
 
-  // WR stored as 0-1 in BacktestRun; max_drawdown as negative fraction e.g. -0.122
+  // WR stored as 0-1 in BacktestRun; max_drawdown as negative fraction
   const wr   = strategy.last_win_rate != null
     ? `${(parseFloat(strategy.last_win_rate) * 100).toFixed(1)}%`
     : 'No data'
@@ -124,6 +125,10 @@ function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete, onNaviga
     ? `${Math.abs(parseFloat(strategy.max_drawdown) * 100).toFixed(1)}%`
     : 'No data'
   const assignments = strategy.assigned_accounts ?? 0
+
+  const primaryName   = strategy.strategy_nickname || strategy.name
+  const hasNick       = Boolean(strategy.strategy_nickname)
+  const codeTag       = strategy.strategy_code || null
 
   return (
     <>
@@ -140,10 +145,19 @@ function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete, onNaviga
           {/* Header */}
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <h3 className="font-semibold text-text text-sm truncate">{strategy.name}</h3>
+              <h3 className="font-semibold text-text text-sm truncate">{primaryName}</h3>
+              {/* Show original name as subtitle only when nickname is set */}
+              {hasNick && (
+                <p className="text-xs text-muted truncate mt-0.5">{strategy.name}</p>
+              )}
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 {strategy.strategy_type && (
                   <Badge variant="blue">{strategy.strategy_type}</Badge>
+                )}
+                {codeTag && (
+                  <span className="text-[10px] font-mono font-medium text-muted bg-surface border border-border px-1.5 py-0.5 rounded">
+                    {codeTag}
+                  </span>
                 )}
                 <span className="text-xs font-mono text-muted">{strategy.symbol ?? '—'}</span>
                 {strategy.timeframe && (
@@ -209,7 +223,7 @@ function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete, onNaviga
             checked={!!strategy.is_active}
             onChange={handleToggle}
             disabled={toggling}
-            label={`Toggle ${strategy.name}`}
+            label={`Toggle ${primaryName}`}
           />
           <span className="text-xs text-muted flex-1">
             {strategy.is_active ? 'Active' : 'Inactive'}
@@ -239,6 +253,7 @@ function StrategyCard({ strategy, accounts, onToggle, onEdit, onDelete, onNaviga
 /* ─── Strategy Form Modal (create/edit) ─── */
 const EMPTY_FORM = {
   name: '', symbol: '', timeframe: 'H1', strategy_type: '',
+  strategy_nickname: '',
   min_confidence: 0.65, sl_multiplier: 1.5, tp_multiplier: 2.0,
   description: '', risk_percent: 1, max_trades: 3,
 }
@@ -252,16 +267,17 @@ function StrategyFormModal({ open, onClose, strategy, onSaved }) {
   useEffect(() => {
     if (open) {
       setForm(strategy ? {
-        name:           strategy.name           ?? '',
-        symbol:         strategy.symbol         ?? '',
-        timeframe:      strategy.timeframe       ?? 'H1',
-        strategy_type:  strategy.strategy_type  ?? '',
-        min_confidence: strategy.min_confidence ?? 0.65,
-        sl_multiplier:  strategy.sl_multiplier  ?? 1.5,
-        tp_multiplier:  strategy.tp_multiplier  ?? 2.0,
-        description:    strategy.description    ?? '',
-        risk_percent:   strategy.risk_percent   ?? 1,
-        max_trades:     strategy.max_trades     ?? 3,
+        name:              strategy.name              ?? '',
+        symbol:            strategy.symbol            ?? '',
+        timeframe:         strategy.timeframe          ?? 'H1',
+        strategy_type:     strategy.strategy_type     ?? '',
+        strategy_nickname: strategy.strategy_nickname ?? '',
+        min_confidence:    strategy.min_confidence    ?? 0.65,
+        sl_multiplier:     strategy.sl_multiplier     ?? 1.5,
+        tp_multiplier:     strategy.tp_multiplier     ?? 2.0,
+        description:       strategy.description       ?? '',
+        risk_percent:      strategy.risk_percent      ?? 1,
+        max_trades:        strategy.max_trades        ?? 3,
       } : EMPTY_FORM)
       setError('')
     }
@@ -296,7 +312,7 @@ function StrategyFormModal({ open, onClose, strategy, onSaved }) {
     <Modal
       open={open}
       onClose={onClose}
-      title={isEdit ? `Edit — ${strategy?.name}` : 'New Strategy'}
+      title={isEdit ? `Edit — ${displayName(strategy)}` : 'New Strategy'}
       size="lg"
       footer={
         <>
@@ -320,6 +336,13 @@ function StrategyFormModal({ open, onClose, strategy, onSaved }) {
             value={form.name}
             onChange={e => set('name', e.target.value)}
             placeholder="My Strategy"
+            className="col-span-2"
+          />
+          <Input
+            label="Nickname (optional)"
+            value={form.strategy_nickname}
+            onChange={e => set('strategy_nickname', e.target.value)}
+            placeholder="Short display name…"
             className="col-span-2"
           />
           <Input

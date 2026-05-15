@@ -40,4 +40,9 @@ export const tradesApi = {
     client.get('/signals/')
       .then(r => r.data)
       .catch(() => []),
+
+  positionsSummary: (params) =>
+    client.get('/trades/positions-summary', { params })
+      .then(r => r.data)
+      .catch(() => null),
 }

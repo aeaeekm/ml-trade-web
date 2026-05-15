@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Navbar from './Navbar'
+import ErrorBoundary from '../ui/ErrorBoundary'
 
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -29,7 +30,9 @@ export default function AppLayout() {
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="p-4 lg:p-6 min-h-full"
             >
-              <Outlet />
+              <ErrorBoundary key={location.pathname}>
+                <Outlet />
+              </ErrorBoundary>
             </motion.div>
           </AnimatePresence>
         </main>

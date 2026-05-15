@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import {
   LayoutDashboard, Zap, FlaskConical, Brain, ArrowLeftRight,
   PieChart, Settings, ChevronLeft, ChevronRight, LogOut, Cpu, Menu, X, Monitor,
-  Users, Shield, FileText,
+  Users, Shield, FileText, Radio,
 } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 import Badge from '../ui/Badge'
@@ -22,6 +22,7 @@ const NAV_GROUPS = [
     label: 'Trading',
     items: [
       { to: '/strategies',   icon: Zap,            label: 'Strategies'   },
+      { to: '/signals',      icon: Radio,          label: 'Signals'      },
       { to: '/mt5-accounts', icon: Monitor,         label: 'MT5 Accounts' },
       { to: '/backtest',     icon: FlaskConical,   label: 'Backtest'     },
       { to: '/models',       icon: Brain,          label: 'ML Models'    },

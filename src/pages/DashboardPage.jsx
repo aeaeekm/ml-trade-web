@@ -9,6 +9,7 @@ import useAuthStore from '../store/authStore'
 import { portfolioApi }  from '../api/portfolio'
 import { tradesApi }     from '../api/trades'
 import { strategiesApi } from '../api/strategies'
+import { signalsApi }    from '../api/signals'
 import { mt5AccountsApi} from '../api/mt5accounts'
 import { systemApi }     from '../api/system'
 import { dashboardApi }  from '../api/dashboard'
@@ -98,15 +99,16 @@ function ServerStatusBar({ sysStatus }) {
 export default function DashboardPage() {
   const { user } = useAuthStore()
 
-  const [summary,      setSummary]      = useState(null)
-  const [signals,      setSignals]      = useState([])
-  const [strategies,   setStrategies]   = useState([])
-  const [accounts,     setAccounts]     = useState([])
-  const [sysStatus,    setSysStatus]    = useState(null)
-  const [equity,       setEquity]       = useState([])
-  const [equityLoading,setEquityLoading]= useState(false)
-  const [loading,      setLoading]      = useState(true)
-  const [selectedAcct, setSelectedAcct] = useState('all')
+  const [summary,       setSummary]      = useState(null)
+  const [signals,       setSignals]      = useState([])
+  const [signalSummary, setSignalSummary]= useState(null)
+  const [strategies,    setStrategies]   = useState([])
+  const [accounts,      setAccounts]     = useState([])
+  const [sysStatus,     setSysStatus]    = useState(null)
+  const [equity,        setEquity]       = useState([])
+  const [equityLoading, setEquityLoading]= useState(false)
+  const [loading,       setLoading]      = useState(true)
+  const [selectedAcct,  setSelectedAcct] = useState('all')
 
   const { range, setRange, startDate, setStartDate, endDate, setEndDate, toQueryParams } = useTimeRange('1m')
 
@@ -130,15 +132,17 @@ export default function DashboardPage() {
     const fetchAll = async () => {
       setLoading(true)
       try {
-        const [sum, sigs, strats, accs, sys] = await Promise.allSettled([
+        const [sum, sigs, sigSum, strats, accs, sys] = await Promise.allSettled([
           portfolioApi.summary(),
-          tradesApi.signals(),
+          signalsApi.recent(10),
+          signalsApi.summary(),
           strategiesApi.list(),
           mt5AccountsApi.list(),
           systemApi.status(),
         ])
         if (sum.status    === 'fulfilled') setSummary(sum.value)
-        if (sigs.status   === 'fulfilled') setSignals(Array.isArray(sigs.value) ? sigs.value.slice(0, 8) : [])
+        if (sigs.status   === 'fulfilled') setSignals(Array.isArray(sigs.value) ? sigs.value : [])
+        if (sigSum.status === 'fulfilled') setSignalSummary(sigSum.value)
         if (strats.status === 'fulfilled') setStrategies(Array.isArray(strats.value) ? strats.value.slice(0, 5) : [])
         if (accs.status   === 'fulfilled') setAccounts(Array.isArray(accs.value) ? accs.value : [])
         if (sys.status    === 'fulfilled') setSysStatus(sys.value)
@@ -248,6 +252,43 @@ export default function DashboardPage() {
         ))}
       </div>
 
+      {/* Signal summary info bar */}
+      {(signalSummary || loading) && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-4 py-2.5 rounded-xl
+                        bg-surface border border-border text-xs">
+          <Radio size={13} className="text-muted shrink-0" />
+          {loading && !signalSummary ? (
+            <span className="text-muted">Loading signal summary…</span>
+          ) : (
+            <>
+              <span className="text-muted">
+                Today's signals:{' '}
+                <span className="font-semibold text-text">{signalSummary?.today_total ?? 0}</span>
+              </span>
+              <span className="text-muted">
+                Active:{' '}
+                <span className="font-semibold text-accent">{signalSummary?.active ?? 0}</span>
+              </span>
+              <span className="text-muted">
+                Executed:{' '}
+                <span className="font-semibold text-success">{signalSummary?.executed ?? 0}</span>
+              </span>
+              {signalSummary?.last_signal_at && (
+                <span className="text-muted">
+                  Last:{' '}
+                  <span className="font-semibold text-text">
+                    {format(new Date(signalSummary.last_signal_at), 'MMM d HH:mm')}
+                  </span>
+                  {signalSummary.last_signal_status && (
+                    <span className="ml-1 capitalize">({signalSummary.last_signal_status})</span>
+                  )}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {/* Account Equity */}
       <Card
         header={
@@ -319,21 +360,24 @@ export default function DashboardPage() {
               {loading ? (
                 <TableSkeleton cols={5} rows={5} />
               ) : signals.length === 0 ? (
-                <TableEmpty message="No signals yet" cols={5} />
+                <TableEmpty
+                  message="No signals generated yet. Check that strategies are active and live_runner.py is running."
+                  cols={5}
+                />
               ) : (
                 <Tbody>
                   {signals.map((sig, i) => (
                     <Tr key={sig.id ?? i}>
                       <Td>
-                        <span className="font-mono font-medium text-text">{sig.symbol ?? 'EURUSD'}</span>
+                        <span className="font-mono font-medium text-text">{sig.symbol ?? '—'}</span>
                       </Td>
                       <Td>
                         <div className={clsx('flex items-center gap-1 text-xs font-medium',
-                          sig.direction === 'long' ? 'text-success' : 'text-danger')}>
-                          {sig.direction === 'long'
+                          sig.direction === 'BUY' ? 'text-success' : 'text-danger')}>
+                          {sig.direction === 'BUY'
                             ? <ArrowUpRight size={13} />
                             : <ArrowDownRight size={13} />}
-                          {(sig.direction ?? 'LONG').toUpperCase()}
+                          {sig.direction ?? '—'}
                         </div>
                       </Td>
                       <Td>
@@ -341,21 +385,28 @@ export default function DashboardPage() {
                           <div className="h-1.5 w-16 bg-border rounded-full overflow-hidden">
                             <div
                               className="h-full bg-accent rounded-full"
-                              style={{ width: `${(sig.confidence ?? 0.7) * 100}%` }}
+                              style={{ width: `${((sig.confidence ?? 0) * 100)}%` }}
                             />
                           </div>
                           <span className="text-xs text-muted">
-                            {((sig.confidence ?? 0.7) * 100).toFixed(0)}%
+                            {((sig.confidence ?? 0) * 100).toFixed(0)}%
                           </span>
                         </div>
                       </Td>
                       <Td>
                         <Badge variant={
-                          sig.status === 'open'   ? 'blue'    :
-                          sig.status === 'closed' ? 'neutral' :
-                          sig.status === 'won'    ? 'success' : 'danger'
-                        }>
-                          {sig.status ?? 'open'}
+                          sig.status === 'active'   ? 'blue'    :
+                          sig.status === 'executed' ? 'success' :
+                          sig.status === 'expired'  ? 'neutral' :
+                          sig.status === 'rejected' ? 'danger'  : 'neutral'
+                        } className="capitalize">
+                          {sig.status === 'active' && (
+                            <span className="relative flex h-1.5 w-1.5 mr-1 shrink-0">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" />
+                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent" />
+                            </span>
+                          )}
+                          {sig.status ?? '—'}
                         </Badge>
                       </Td>
                       <Td muted>

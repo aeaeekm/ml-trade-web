@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import {
   ArrowLeft, Zap, ArrowUpRight, ArrowDownRight,
-  Play, BarChart2, Clock, Info,
+  Play, BarChart2, Clock, Info, Pencil, Check, X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { strategiesApi } from '../api/strategies'
+import { displayName } from '../utils/strategyDisplay'
 import Card            from '../components/ui/Card'
 import Badge           from '../components/ui/Badge'
 import Button          from '../components/ui/Button'
@@ -35,7 +36,7 @@ function timeAgo(ts) {
   try { return formatDistanceToNow(parseISO(ts), { addSuffix: true }) } catch { return null }
 }
 
-/* ── KPI stat card (reused from Dashboard pattern) ── */
+/* ── KPI stat card ── */
 function KpiCard({ label, value, valueClass, loading }) {
   return (
     <div className="bg-bg border border-border rounded-xl p-4 shadow-card flex flex-col gap-1">
@@ -100,6 +101,97 @@ function EmptyState({ icon: Icon = Info, title, description }) {
         {description && <p className="text-xs text-muted">{description}</p>}
       </div>
     </div>
+  )
+}
+
+/* ── Inline nickname editor ── */
+function NicknameEditor({ strategyId, currentNick, onSaved }) {
+  const [editing, setEditing]   = useState(false)
+  const [value,   setValue]     = useState(currentNick || '')
+  const [saving,  setSaving]    = useState(false)
+  const inputRef                = useRef(null)
+
+  useEffect(() => {
+    setValue(currentNick || '')
+  }, [currentNick])
+
+  useEffect(() => {
+    if (editing && inputRef.current) inputRef.current.focus()
+  }, [editing])
+
+  const save = async () => {
+    if (saving) return
+    const trimmed = value.trim()
+    if (trimmed === (currentNick || '')) { setEditing(false); return }
+    setSaving(true)
+    try {
+      await strategiesApi.update(strategyId, { strategy_nickname: trimmed })
+      onSaved(trimmed)
+    } catch {
+      // silently revert on failure
+      setValue(currentNick || '')
+    } finally {
+      setSaving(false)
+      setEditing(false)
+    }
+  }
+
+  const cancel = () => {
+    setValue(currentNick || '')
+    setEditing(false)
+  }
+
+  const handleKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); save() }
+    if (e.key === 'Escape') cancel()
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={handleKey}
+          onBlur={save}
+          placeholder="Add nickname…"
+          className={clsx(
+            'bg-bg border border-accent rounded-lg px-2 py-1 text-sm text-text',
+            'focus:outline-none focus:ring-2 focus:ring-accent/30 w-48',
+          )}
+        />
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="p-1 rounded text-success hover:bg-success/10 transition-colors"
+          aria-label="Save nickname"
+        >
+          <Check size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={cancel}
+          className="p-1 rounded text-muted hover:bg-surface transition-colors"
+          aria-label="Cancel"
+        >
+          <X size={14} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="group flex items-center gap-1.5 text-muted hover:text-text transition-colors"
+      title="Edit nickname"
+    >
+      <span className="text-xs">{currentNick || 'Add nickname'}</span>
+      <Pencil size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+    </button>
   )
 }
 
@@ -255,10 +347,15 @@ function EquityTab({ strategyId }) {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const params = toQueryParams()
-    const result = await strategiesApi.equityCurve(strategyId, params)
-    setData(Array.isArray(result) ? result : [])
-    setLoading(false)
+    try {
+      const params = toQueryParams()
+      const result = await strategiesApi.equityCurve(strategyId, params)
+      setData(Array.isArray(result) ? result : [])
+    } catch {
+      setData([])
+    } finally {
+      setLoading(false)
+    }
   }, [strategyId, range, startDate, endDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchData() }, [fetchData])
@@ -296,6 +393,7 @@ function SignalsTab({ strategyId }) {
   useEffect(() => {
     strategiesApi.signals(strategyId, { limit: 100 })
       .then(data => setSignals(Array.isArray(data) ? data : []))
+      .catch(() => setSignals([]))
       .finally(() => setLoading(false))
   }, [strategyId])
 
@@ -372,15 +470,21 @@ function PnLTab({ strategyId }) {
   useEffect(() => {
     strategiesApi.pnlSummary(strategyId)
       .then(d => setSummary(d))
+      .catch(() => setSummary(null))
       .finally(() => setSumLoading(false))
   }, [strategyId])
 
   const fetchPnlByDay = useCallback(async () => {
     setDayLoading(true)
-    const params = toQueryParams()
-    const result = await strategiesApi.pnlByDay(strategyId, params.range ?? null)
-    setPnlByDay(Array.isArray(result) ? result : [])
-    setDayLoading(false)
+    try {
+      const params = toQueryParams()
+      const result = await strategiesApi.pnlByDay(strategyId, params.range ?? null)
+      setPnlByDay(Array.isArray(result) ? result : [])
+    } catch {
+      setPnlByDay([])
+    } finally {
+      setDayLoading(false)
+    }
   }, [strategyId, range, startDate, endDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchPnlByDay() }, [fetchPnlByDay])
@@ -481,9 +585,21 @@ export default function StrategyDetailPage() {
     }
   }
 
+  const handleNicknameSaved = (newNick) => {
+    setDetail(prev => prev ? { ...prev, strategy_nickname: newNick } : prev)
+  }
+
   const lastSignalAgo = detail?.last_signal_at ? timeAgo(detail.last_signal_at) : null
   const backtestDate  = detail?.last_backtest?.date
     ?? (detail?.last_backtest ? 'Available' : null)
+
+  // Primary title: nickname > name > fallback
+  const titleText = detail ? displayName(detail) : `Strategy #${strategyId}`
+  // Subtitle: show original name + code when nickname differs
+  const hasNick = detail?.strategy_nickname && detail.strategy_nickname !== detail?.name
+  const subtitleParts = []
+  if (hasNick && detail?.name) subtitleParts.push(detail.name)
+  if (detail?.strategy_code)   subtitleParts.push(detail.strategy_code)
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -540,7 +656,7 @@ export default function StrategyDetailPage() {
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold text-text">{detail?.name ?? `Strategy #${strategyId}`}</h1>
+              <h1 className="text-2xl font-bold text-text">{titleText}</h1>
               {detail?.symbol && (
                 <span className="font-mono text-sm font-semibold text-muted">{detail.symbol}</span>
               )}
@@ -554,7 +670,22 @@ export default function StrategyDetailPage() {
                 </Badge>
               )}
             </div>
-            <p className="text-xs text-muted mt-1.5 flex flex-wrap items-center gap-3">
+
+            {/* Subtitle row: original name + code + nickname editor */}
+            <div className="flex flex-wrap items-center gap-3 mt-1.5">
+              {subtitleParts.length > 0 && (
+                <p className="text-xs text-muted">{subtitleParts.join(' · ')}</p>
+              )}
+              {detail && (
+                <NicknameEditor
+                  strategyId={detail.id}
+                  currentNick={detail.strategy_nickname}
+                  onSaved={handleNicknameSaved}
+                />
+              )}
+            </div>
+
+            <p className="text-xs text-muted mt-1 flex flex-wrap items-center gap-3">
               {lastSignalAgo && (
                 <span className="flex items-center gap-1">
                   <Clock size={11} />

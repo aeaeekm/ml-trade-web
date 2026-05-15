@@ -1,24 +1,22 @@
 import client from './client'
 
 export const backtestApi = {
-  getRuns: async (strategyId) => {
-    const params = strategyId ? { strategy_id: strategyId } : {}
-    const res = await client.get('/backtest/runs', { params })
-    return res.data
-  },
+  getRuns: (params = {}) =>
+    client.get('/backtest/runs', { params })
+      .then(r => r.data)
+      .catch(() => ({
+        data: [],
+        pagination: { page: 1, page_size: 25, total: 0, total_pages: 0 },
+      })),
 
-  run: async ({ strategy_id, broker_account_id, start_date, end_date }) => {
-    const res = await client.post('/backtest/run', {
-      strategy_id,
-      broker_account_id,
-      start_date,
-      end_date,
-    })
-    return res.data
-  },
+  run: (body) =>
+    client.post('/backtest/run', body).then(r => r.data),
 
-  getResult: async (runId) => {
-    const res = await client.get(`/backtest/runs/${runId}`)
-    return res.data
-  },
+  getResult: (runId) =>
+    client.get(`/backtest/runs/${runId}`).then(r => r.data),
+
+  getTrades: (runId) =>
+    client.get(`/backtest/runs/${runId}/trades`)
+      .then(r => r.data)
+      .catch(() => []),
 }

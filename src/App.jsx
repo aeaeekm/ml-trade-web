@@ -19,6 +19,7 @@ import StrategyDetailPage from './pages/StrategyDetailPage'
 import UsersPage from './pages/UsersPage'
 import RolePermissionsPage from './pages/RolePermissionsPage'
 import AuditLogsPage from './pages/AuditLogsPage'
+import SignalsPage from './pages/SignalsPage'
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuthStore()
@@ -80,6 +81,7 @@ export default function App() {
         <Route path="backtest"     element={<BacktestPage />}      />
         <Route path="models"     element={<ModelsPage />} />
         <Route path="trades"     element={<TradesPage />} />
+        <Route path="signals"    element={<SignalsPage />} />
         <Route path="portfolio"        element={<PortfolioPage />} />
         <Route path="settings"         element={<SettingsPage />} />
         <Route path="users"            element={<UsersPage />} />
