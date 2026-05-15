@@ -10,8 +10,14 @@ export const modelsApi = {
       })),
 
   train: (strategyId) =>
-    client.post(`/models/train/${strategyId}`).then(r => r.data),
+    client.post(`/models/train/${strategyId}`, null, { timeout: 120000 }).then(r => r.data),
 
   get: (id) =>
     client.get(`/models/${id}`).then(r => r.data),
+
+  activate: (id) =>
+    client.patch(`/models/${id}/activate`).then(r => r.data),
+
+  byStrategy: (sid) =>
+    client.get(`/models/by-strategy/${sid}`).then(r => r.data).catch(() => []),
 }

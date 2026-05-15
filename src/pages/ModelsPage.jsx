@@ -160,6 +160,8 @@ export default function ModelsPage() {
     setPage(1)
   }
 
+  const [activating, setActivating] = useState({})
+
   const handleTrain = async (strategyId) => {
     setTraining(t => ({ ...t, [strategyId]: true }))
     try {
@@ -169,6 +171,18 @@ export default function ModelsPage() {
       setError(`Training failed: ${err?.response?.data?.detail || 'Unknown error'}`)
     } finally {
       setTraining(t => ({ ...t, [strategyId]: false }))
+    }
+  }
+
+  const handleActivate = async (modelId, strategyId) => {
+    setActivating(a => ({ ...a, [modelId]: true }))
+    try {
+      await modelsApi.activate(modelId)
+      await fetchModels()
+    } catch (err) {
+      setError(`Failed to activate: ${err?.response?.data?.detail || 'Unknown error'}`)
+    } finally {
+      setActivating(a => ({ ...a, [modelId]: false }))
     }
   }
 
@@ -278,20 +292,41 @@ export default function ModelsPage() {
                     <Td muted>{(m.training_samples ?? m.sample_count)?.toLocaleString() ?? '—'}</Td>
                     <Td muted>{m.trained_at ? format(new Date(m.trained_at), 'MMM d, yyyy') : '—'}</Td>
                     <Td>
-                      <Badge variant={m.is_active ? 'success' : 'neutral'}>
-                        {m.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
+                      {m.is_active ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-success/15 text-success border border-success/25">
+                          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                          Active
+                        </span>
+                      ) : (
+                        <Badge variant="neutral">Inactive</Badge>
+                      )}
                     </Td>
                     <Td>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        loading={!!training[m.strategy_id]}
-                        icon={<Play size={12} />}
-                        onClick={(e) => { e.stopPropagation(); handleTrain(m.strategy_id) }}
-                      >
-                        Train
-                      </Button>
+                      <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                        {/* Set as active (only shown when inactive) */}
+                        {!m.is_active && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            loading={!!activating[m.id]}
+                            title="Set this model as active for its strategy"
+                            onClick={() => handleActivate(m.id, m.strategy_id)}
+                            className="text-accent hover:bg-accent/10 text-xs px-2"
+                          >
+                            Set Active
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={!!training[m.strategy_id]}
+                          icon={<Play size={12} />}
+                          onClick={() => handleTrain(m.strategy_id)}
+                          title="Train a new model version for this strategy"
+                        >
+                          Retrain
+                        </Button>
+                      </div>
                     </Td>
                   </Tr>
                 ))}
@@ -302,6 +337,42 @@ export default function ModelsPage() {
           {/* Bottom pagination */}
           {total > 0 && (
             <Pagination {...paginationProps} />
+          )}
+
+              {/* Active model per strategy summary */}
+          {!loading && strategies.length > 0 && (
+            <div className="bg-surface border border-border rounded-xl p-4 space-y-2">
+              <p className="text-xs font-semibold text-muted uppercase tracking-wide">
+                Active model per strategy
+              </p>
+              <div className="space-y-1.5">
+                {strategies.map(s => {
+                  const activeModel = models.find(m => m.strategy_id === s.id && m.is_active)
+                  const allForStrat = models.filter(m => m.strategy_id === s.id)
+                  const name = s.strategy_nickname || s.name || `Strategy ${s.id}`
+                  return (
+                    <div key={s.id} className="flex items-center gap-3 text-xs">
+                      <span className={clsx('h-1.5 w-1.5 rounded-full shrink-0',
+                        s.is_active ? 'bg-success' : 'bg-border')} />
+                      <span className="text-text font-medium w-40 truncate" title={name}>{name}</span>
+                      <span className="font-mono text-muted">{s.strategy_code || ''}</span>
+                      {activeModel ? (
+                        <>
+                          <span className="text-success">
+                            Model #{activeModel.id} — Acc {activeModel.accuracy != null ? `${(activeModel.accuracy*100).toFixed(1)}%` : 'N/A'}
+                          </span>
+                          {allForStrat.length > 1 && (
+                            <span className="text-muted">({allForStrat.length} versions)</span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-danger">No model — signals will be skipped</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           )}
 
           {/* Train unmodeled strategies */}
